@@ -5,11 +5,16 @@ let currentDate = new Date()
 let currentFilter = 'all' // 'all', 'income', 'expense'
 let selectedType = 'expense' // 모달 내 기본값: 지출
 let currentRecords = []
+let availableAssetGoals = [] // 연동 가능한 자산 목표 목록 (budgets_and_categories)
 let editingRecordId = null // 현재 수정 중인 레코드 ID (null이면 신규 추가)
-let prevMonthRecordsCache = [] // 전달 내역 복사용 캐시
+let isChartDetailOpen = false // 카테고리별 지출 비중 상세 보기 토글 상태 (기본값: 접힘)
+let currentTotalIncome = 0 // 당월 총 수입
+let currentTotalExpense = 0 // 당월 총 지출
+let activeChartSegmentIndex = null // 현재 툴팁이 활성화된 차트 세그먼트 인덱스
+let chartTooltipTimer = null // 차트 툴팁 자동 닫힘 타이머
 
-// ⚡ 빠른 템플릿 기본 데이터셋 (수입 / 지출)
-const QUICK_TEMPLATES = {
+// ⚡ 빠른 템플릿 기본 데이터셋 (초기값)
+const DEFAULT_TEMPLATES = {
   income: [
     { name: '월급', amount: 3000000, icon: '💰' },
     { name: '보너스', amount: 500000, icon: '🎁' },
@@ -27,6 +32,36 @@ const QUICK_TEMPLATES = {
     { name: '공과금', amount: 80000, icon: '💡' }
   ]
 }
+
+const TEMPLATE_STORAGE_KEY = 'moneyroom_quick_templates'
+
+// 템플릿 불러오기 (localStorage)
+function loadTemplates() {
+  try {
+    const saved = localStorage.getItem(TEMPLATE_STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (parsed.income && parsed.expense) {
+        return parsed
+      }
+    }
+  } catch (e) {
+    console.warn('템플릿 로드 실패, 기본값 사용:', e)
+  }
+  return JSON.parse(JSON.stringify(DEFAULT_TEMPLATES))
+}
+
+// 템플릿 저장하기
+function saveTemplates(templates) {
+  try {
+    localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates))
+  } catch (e) {
+    console.error('템플릿 저장 실패:', e)
+  }
+}
+
+let userTemplates = loadTemplates()
+let currentTemplateTab = 'expense' // 템플릿 관리 모달 현재 탭 (expense / income)
 
 // 🎨 차트 전용 파스텔 컬러 팔레트
 const CHART_COLORS = [
@@ -71,8 +106,8 @@ async function fetchMonthlyData() {
   const recordContainer = document.getElementById('record-container')
 
   try {
-    // 당월 및 전월 데이터 동시 조회
-    const [currentRes, prevRes] = await Promise.all([
+    // 당월, 전월 데이터 및 자산 목표(budgets_and_categories) 동시 조회
+    const [currentRes, prevRes, goalsRes] = await Promise.all([
       supabase
         .from('monthly_records')
         .select('*')
@@ -81,7 +116,12 @@ async function fetchMonthlyData() {
       supabase
         .from('monthly_records')
         .select('*')
-        .eq('year_month', prevYM)
+        .eq('year_month', prevYM),
+      supabase
+        .from('budgets_and_categories')
+        .select('*')
+        .neq('category_name', '이번달 총 잔액')
+        .order('id', { ascending: true })
     ])
 
     if (currentRes.error) throw currentRes.error
@@ -89,6 +129,9 @@ async function fetchMonthlyData() {
 
     currentRecords = currentRes.data || []
     const prevRecords = prevRes.data || []
+    if (!goalsRes.error && goalsRes.data) {
+      availableAssetGoals = goalsRes.data
+    }
 
     // 요약 계산 및 차트 렌더링
     calculateAndRenderSummary(currentRecords, prevRecords)
@@ -120,6 +163,10 @@ function calculateAndRenderSummary(curRecords, prevRecords) {
 
   const curNet = curIncome - curExpense
 
+  // 전역 당월 집계 저장 (탭별 상단 요약 카드 렌더링에 사용)
+  currentTotalIncome = curIncome
+  currentTotalExpense = curExpense
+
   // 전월 집계
   const prevIncome = prevRecords
     .filter(r => r.type === 'income')
@@ -131,20 +178,20 @@ function calculateAndRenderSummary(curRecords, prevRecords) {
 
   const prevNet = prevIncome - prevExpense
 
-  // UI 바인딩: 요약 박스
+  // UI 바인딩: 요약 박스 (이달의 잔여 현금 흐름)
   const summaryBox = document.getElementById('flow-summary-box')
   const netElem = document.getElementById('net-amount')
-  const incomeElem = document.getElementById('total-income')
-  const expenseElem = document.getElementById('total-expense')
 
-  netElem.textContent = `${curNet >= 0 ? '+' : ''}${curNet.toLocaleString()}원`
-  incomeElem.textContent = `+${curIncome.toLocaleString()}원`
-  expenseElem.textContent = `-${curExpense.toLocaleString()}원`
+  if (netElem) {
+    netElem.textContent = `${curNet >= 0 ? '+' : ''}${curNet.toLocaleString()}원`
+  }
 
-  if (curNet < 0) {
-    summaryBox.classList.add('negative')
-  } else {
-    summaryBox.classList.remove('negative')
+  if (summaryBox) {
+    if (curNet < 0) {
+      summaryBox.classList.add('negative')
+    } else {
+      summaryBox.classList.remove('negative')
+    }
   }
 
   // 지난달 비교 렌더링
@@ -154,21 +201,61 @@ function calculateAndRenderSummary(curRecords, prevRecords) {
   renderExpenseChart(curRecords)
 }
 
-// 📊 카테고리별 지출 비중 둥근 도넛 차트 렌더링
+// 📊 카테고리별 지출 비중 상세 보기 토글 (그래프만 보기 <-> 상세 내역 펼치기)
+function toggleChartDetail() {
+  isChartDetailOpen = !isChartDetailOpen
+  const legendElem = document.getElementById('chart-legend-container')
+  const toggleBtn = document.getElementById('btn-toggle-chart-detail')
+
+  if (legendElem) {
+    if (isChartDetailOpen) {
+      legendElem.classList.add('open')
+    } else {
+      legendElem.classList.remove('open')
+    }
+  }
+
+  if (toggleBtn) {
+    if (isChartDetailOpen) {
+      toggleBtn.classList.add('active')
+      const span = toggleBtn.querySelector('span')
+      if (span) span.textContent = '닫기'
+    } else {
+      toggleBtn.classList.remove('active')
+      const span = toggleBtn.querySelector('span')
+      if (span) span.textContent = '상세'
+    }
+  }
+}
+
+// 📊 카테고리별 지출 비중 둥근 도넛 차트 렌더링 (SVG 및 모바일 툴팁 인터랙션 지원)
 function renderExpenseChart(curRecords) {
-  const chartBody = document.getElementById('chart-card-body')
-  const chartTotalElem = document.getElementById('chart-total-expense')
-  if (!chartBody) return
+  const graphWrap = document.getElementById('chart-graph-wrap')
+  const legendContainer = document.getElementById('chart-legend-container')
+  const toggleBtn = document.getElementById('btn-toggle-chart-detail')
+  if (!graphWrap) return
+
+  // 기존 툴팁 타이머 해제
+  if (chartTooltipTimer) {
+    clearTimeout(chartTooltipTimer)
+    chartTooltipTimer = null
+  }
+  activeChartSegmentIndex = null
 
   const expenseRecords = curRecords.filter(r => r.type === 'expense')
   const totalExp = expenseRecords.reduce((sum, r) => sum + Number(r.amount), 0)
 
-  chartTotalElem.textContent = `총 ${totalExp.toLocaleString()}원`
-
   if (expenseRecords.length === 0 || totalExp === 0) {
-    chartBody.innerHTML = '<div class="chart-empty-message">이번 달 등록된 지출 내역이 없습니다.</div>'
+    graphWrap.innerHTML = '<div class="chart-empty-message">지출 내역 없음</div>'
+    if (legendContainer) {
+      legendContainer.innerHTML = ''
+      legendContainer.classList.remove('open')
+    }
+    if (toggleBtn) toggleBtn.style.display = 'none'
     return
   }
+
+  if (toggleBtn) toggleBtn.style.display = 'inline-flex'
 
   // 카테고리별 집계
   const catMap = {}
@@ -186,61 +273,210 @@ function renderExpenseChart(curRecords) {
     }))
     .sort((a, b) => b.amount - a.amount)
 
-  // conic-gradient 각도 계산
-  let currentDeg = 0
-  const gradientSegments = sortedCats.map((item, idx) => {
+  // SVG 도넛 차트 세그먼트 생성 (반지름: 35, 둘레: ~219.91)
+  const radius = 35
+  const circumference = 2 * Math.PI * radius
+  let accumulatedDash = 0
+
+  const svgSegments = sortedCats.map((item, idx) => {
     const color = CHART_COLORS[idx % CHART_COLORS.length]
-    const deg = (item.amount / totalExp) * 360
-    const start = currentDeg
-    const end = currentDeg + deg
-    currentDeg = end
-    return `${color} ${start}deg ${end}deg`
-  })
+    const ratio = item.amount / totalExp
+    const dash = circumference * ratio
+    const offset = -accumulatedDash
+    accumulatedDash += dash
 
-  const conicStyle = `background: conic-gradient(${gradientSegments.join(', ')});`
+    return `
+      <circle 
+        class="donut-segment" 
+        data-index="${idx}"
+        cx="50" cy="50" r="${radius}"
+        fill="transparent"
+        stroke="${color}"
+        stroke-width="16"
+        stroke-dasharray="${dash} ${circumference}"
+        stroke-dashoffset="${offset}"
+        role="button"
+        tabindex="0"
+        aria-label="${escapeHtml(item.category)}: ${item.amount.toLocaleString()}원 (${item.percent}%)"
+      />
+    `
+  }).join('')
 
-  // 간결한 금액 표기 (예: 15만원, 5,000원)
+  // 간결한 금액 표기 (예: 15만, 5,000원)
   const shortTotal = totalExp >= 10000 
-    ? `${Math.round(totalExp / 10000).toLocaleString()}만원` 
+    ? `${Math.round(totalExp / 10000).toLocaleString()}만` 
     : `${totalExp.toLocaleString()}원`
 
-  chartBody.innerHTML = `
-    <!-- 도넛 차트 -->
-    <div class="donut-chart-wrap">
-      <div class="donut-chart" style="${conicStyle}"></div>
+  // 1. 도넛 차트 및 말풍선 툴팁 렌더링
+  graphWrap.innerHTML = `
+    <div class="donut-chart-wrap" id="donut-chart-wrap">
+      <div id="chart-tooltip" class="chart-tooltip" role="tooltip" aria-hidden="true">
+        <span class="tooltip-cat"></span>
+        <span class="tooltip-val"></span>
+      </div>
+      <svg class="donut-chart-svg" viewBox="0 0 100 100">
+        ${svgSegments}
+      </svg>
       <div class="donut-hole">
         <span class="donut-hole-label">총 지출</span>
         <span class="donut-hole-value">${shortTotal}</span>
       </div>
     </div>
-
-    <!-- 우측 범례 리스트 -->
-    <div class="chart-legend-list">
-      ${sortedCats.map((item, idx) => {
-        const color = CHART_COLORS[idx % CHART_COLORS.length]
-        return `
-          <div class="legend-item">
-            <div class="legend-left">
-              <span class="legend-dot" style="background: ${color};"></span>
-              <span class="legend-name">${escapeHtml(item.category)}</span>
-            </div>
-            <div class="legend-right">
-              <span class="legend-percent">${item.percent}%</span>
-              <span class="legend-amount">(${item.amount.toLocaleString()}원)</span>
-            </div>
-          </div>
-        `
-      }).join('')}
-    </div>
   `
+
+  // 2. 도넛 조각 클릭/터치 이벤트 바인딩
+  attachChartInteractions(sortedCats)
+
+  // 3. 상세 보기 클릭 시 펼쳐지는 카테고리 목록 렌더링 (하단 전체 폭)
+  if (legendContainer) {
+    legendContainer.innerHTML = sortedCats.map((item, idx) => {
+      const color = CHART_COLORS[idx % CHART_COLORS.length]
+      return `
+        <div class="legend-item" data-legend-index="${idx}">
+          <div class="legend-left">
+            <span class="legend-dot" style="background: ${color};"></span>
+            <span class="legend-name">${escapeHtml(item.category)}</span>
+          </div>
+          <div class="legend-right">
+            <span class="legend-percent">${item.percent}%</span>
+            <span class="legend-amount">(${item.amount.toLocaleString()}원)</span>
+          </div>
+        </div>
+      `
+    }).join('')
+
+    if (isChartDetailOpen) {
+      legendContainer.classList.add('open')
+    } else {
+      legendContainer.classList.remove('open')
+    }
+  }
+
+  // 토글 버튼 상태 동기화
+  if (toggleBtn) {
+    if (isChartDetailOpen) {
+      toggleBtn.classList.add('active')
+      const span = toggleBtn.querySelector('span')
+      if (span) span.textContent = '닫기'
+    } else {
+      toggleBtn.classList.remove('active')
+      const span = toggleBtn.querySelector('span')
+      if (span) span.textContent = '상세'
+    }
+  }
 }
 
-// 지난달 비교 뷰 렌더링
+// 📊 차트 조각 클릭(터치) 말풍선 툴팁 인터랙션 바인딩
+function attachChartInteractions(sortedCats) {
+  const chartWrap = document.getElementById('donut-chart-wrap')
+  const tooltip = document.getElementById('chart-tooltip')
+  if (!chartWrap || !tooltip) return
+
+  const svg = chartWrap.querySelector('.donut-chart-svg')
+  const segments = chartWrap.querySelectorAll('.donut-segment')
+
+  function hideTooltip() {
+    if (chartTooltipTimer) {
+      clearTimeout(chartTooltipTimer)
+      chartTooltipTimer = null
+    }
+    activeChartSegmentIndex = null
+    tooltip.classList.remove('show')
+    tooltip.setAttribute('aria-hidden', 'true')
+    if (svg) svg.classList.remove('has-active')
+    segments.forEach(seg => seg.classList.remove('active'))
+  }
+
+  function showTooltip(index, item) {
+    if (chartTooltipTimer) {
+      clearTimeout(chartTooltipTimer)
+      chartTooltipTimer = null
+    }
+
+    activeChartSegmentIndex = index
+    if (svg) svg.classList.add('has-active')
+
+    segments.forEach((seg, i) => {
+      if (i === index) {
+        seg.classList.add('active')
+      } else {
+        seg.classList.remove('active')
+      }
+    })
+
+    const catElem = tooltip.querySelector('.tooltip-cat')
+    const valElem = tooltip.querySelector('.tooltip-val')
+    if (catElem) catElem.textContent = item.category
+    if (valElem) valElem.textContent = `${item.percent}%`
+
+    tooltip.classList.add('show')
+    tooltip.setAttribute('aria-hidden', 'false')
+
+    // 3.5초 뒤 자동 숨김
+    chartTooltipTimer = setTimeout(() => {
+      hideTooltip()
+    }, 3500)
+  }
+
+  // 각 조각에 클릭/터치 이벤트 등록
+  segments.forEach((seg, idx) => {
+    const item = sortedCats[idx]
+    if (!item) return
+
+    const handleAction = (e) => {
+      e.stopPropagation()
+      if (activeChartSegmentIndex === idx) {
+        hideTooltip() // 같은 조각 클릭 시 토글 닫기
+      } else {
+        showTooltip(idx, item)
+      }
+    }
+
+    seg.addEventListener('click', handleAction)
+  })
+
+  // 하단 상세 범례 목록 클릭/터치 시에도 툴팁 동기화 연동
+  const legendItems = document.querySelectorAll('.legend-item')
+  legendItems.forEach(elem => {
+    const idx = Number(elem.getAttribute('data-legend-index'))
+    const item = sortedCats[idx]
+    if (!item) return
+
+    elem.style.cursor = 'pointer'
+    elem.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (activeChartSegmentIndex === idx) {
+        hideTooltip()
+      } else {
+        showTooltip(idx, item)
+      }
+    })
+  })
+
+  // 툴팁 클릭 시에도 닫기
+  tooltip.addEventListener('click', (e) => {
+    e.stopPropagation()
+    hideTooltip()
+  })
+
+  // 외부 클릭 시 툴팁 닫기
+  if (window._chartTooltipDocClick) {
+    document.removeEventListener('click', window._chartTooltipDocClick)
+  }
+  window._chartTooltipDocClick = (e) => {
+    if (!chartWrap.contains(e.target) && !e.target.closest('.legend-item')) {
+      hideTooltip()
+    }
+  }
+  document.addEventListener('click', window._chartTooltipDocClick)
+}
+
+// 지난달 비교 뷰 렌더링 (간략한 평어/대시보드형 문구)
 function renderComparison(curInc, curExp, curNet, prevInc, prevExp, prevNet, hasPrevData) {
   const compareContent = document.getElementById('compare-content')
 
   if (!hasPrevData) {
-    compareContent.innerHTML = `<span style="color: #94a3b8;">지난달(이전 달) 등록된 내역이 없습니다.</span>`
+    compareContent.innerHTML = `<span style="color: #94a3b8;">지난달 등록 내역 없음</span>`
     return
   }
 
@@ -251,20 +487,20 @@ function renderComparison(curInc, curExp, curNet, prevInc, prevExp, prevNet, has
 
   let expText = ''
   if (expDiff > 0) {
-    expText = `지출이 지난달보다 <span class="compare-tag increase">${expDiff.toLocaleString()}원 더 많습니다</span>.`
+    expText = `지출 <span class="compare-tag increase">+${expDiff.toLocaleString()}원 증가</span>`
   } else if (expDiff < 0) {
-    expText = `지출을 지난달보다 <span class="compare-tag decrease">${Math.abs(expDiff).toLocaleString()}원 절약했습니다</span>.`
+    expText = `지출 <span class="compare-tag decrease">-${Math.abs(expDiff).toLocaleString()}원 절약</span>`
   } else {
-    expText = `지출이 지난달과 동일합니다.`
+    expText = `지출 변동 없음`
   }
 
   let netText = ''
   if (netDiff > 0) {
-    netText = `잔여 현금흐름이 지난달보다 <span class="compare-tag income-up">+${netDiff.toLocaleString()}원 개선되었습니다</span>.`
+    netText = `현금흐름 <span class="compare-tag income-up">+${netDiff.toLocaleString()}원 개선</span>`
   } else if (netDiff < 0) {
-    netText = `잔여 현금흐름이 지난달보다 <span class="compare-tag income-down">-${Math.abs(netDiff).toLocaleString()}원 감소했습니다</span>.`
+    netText = `현금흐름 <span class="compare-tag income-down">-${Math.abs(netDiff).toLocaleString()}원 감소</span>`
   } else {
-    netText = `잔여 현금흐름이 지난달과 동일합니다.`
+    netText = `현금흐름 변동 없음`
   }
 
   compareContent.innerHTML = `
@@ -273,49 +509,155 @@ function renderComparison(curInc, curExp, curNet, prevInc, prevExp, prevNet, has
   `
 }
 
-// 3. 내역 리스트 렌더링 (필터 적용 및 수정/삭제 버튼)
+// 🎯 레코드가 어떤 자산 목표와 연동되어 있는지 확인 (메모 태그 [🎯목표명] 또는 [목표:목표명] 또는 카테고리 일치)
+function getLinkedGoal(record) {
+  if (!record || availableAssetGoals.length === 0) return null
+  const memo = (record.memo || '').trim()
+  const tagMatch = memo.match(/\[(?:목표|🎯):([^\]]+)\]/)
+  if (tagMatch) {
+    const goalName = tagMatch[1].trim()
+    const found = availableAssetGoals.find(g => g.category_name.trim() === goalName)
+    if (found) return found
+  }
+  const cat = (record.category || '').trim()
+  return availableAssetGoals.find(g => g.category_name.trim() === cat) || null
+}
+
+// 🎯 자산 목표 연동 드롭다운 옵션 채우기
+function populateTargetLinkDropdown(selectedGoalName = '') {
+  const select = document.getElementById('target-link-select')
+  if (!select) return
+
+  let html = '<option value="">-- 연동 안 함 (일반 생활 내역) --</option>'
+  availableAssetGoals.forEach(g => {
+    const isSel = (g.category_name.trim() === selectedGoalName.trim()) ? 'selected' : ''
+    html += `<option value="${escapeHtml(g.category_name)}" ${isSel}>🎯 [${escapeHtml(g.category_name)}] 목표 연동</option>`
+  })
+  select.innerHTML = html
+  updateTargetLinkTip(select.value)
+}
+
+// 자산 목표 드롭다운 선택 시 카테고리 자동 설정 및 안내 문구 갱신
+function handleTargetLinkChange(val) {
+  const catInput = document.getElementById('new-category')
+  if (val && catInput) {
+    const curVal = catInput.value.trim()
+    if (!curVal || availableAssetGoals.some(g => g.category_name === curVal)) {
+      catInput.value = val
+    }
+  }
+  updateTargetLinkTip(val)
+}
+
+// 안내 팁 업데이트
+function updateTargetLinkTip(val) {
+  const tip = document.getElementById('asset-link-tip')
+  if (!tip) return
+  if (!val) {
+    tip.innerHTML = ''
+    tip.classList.remove('active')
+    return
+  }
+  tip.classList.add('active')
+  if (selectedType === 'expense') {
+    tip.innerHTML = `💎 <strong>저축성 지출</strong>: 총자산 내에서 [<strong>${escapeHtml(val)}</strong>] 목표의 현재 금액으로 자동 적립·배분됩니다.`
+  } else {
+    tip.innerHTML = `💎 <strong>목표 수입</strong>: [<strong>${escapeHtml(val)}</strong>] 목표의 현재 금액에 직접 추가됩니다.`
+  }
+}
+
+// 3. 내역 리스트 렌더링 (필터별 상단 요약 카드 고정 + 내역 리스트)
 function renderRecordList() {
   const container = document.getElementById('record-container')
+  if (!container) return
 
+  // 1) 탭에 따른 상단 요약 카드 HTML 생성 (내역 리스트와 동일한 카드 형태, 색상만 다르게)
+  const incomeSummaryCardHtml = `
+    <div class="record-item summary-card summary-income">
+      <div class="record-left">
+        <div class="record-badge income">₩</div>
+        <div class="record-texts">
+          <span class="record-category">총 수입</span>
+          <span class="record-memo">이번 달 총 수입 합계</span>
+        </div>
+      </div>
+      <div class="record-right">
+        <span class="record-amount income">+${currentTotalIncome.toLocaleString()}원</span>
+      </div>
+    </div>
+  `
+
+  const expenseSummaryCardHtml = `
+    <div class="record-item summary-card summary-expense">
+      <div class="record-left">
+        <div class="record-badge expense">−</div>
+        <div class="record-texts">
+          <span class="record-category">총 지출</span>
+          <span class="record-memo">이번 달 총 지출 합계</span>
+        </div>
+      </div>
+      <div class="record-right">
+        <span class="record-amount expense">-${currentTotalExpense.toLocaleString()}원</span>
+      </div>
+    </div>
+  `
+
+  let summaryHtml = ''
+  if (currentFilter === 'all') {
+    summaryHtml = incomeSummaryCardHtml + expenseSummaryCardHtml
+  } else if (currentFilter === 'income') {
+    summaryHtml = incomeSummaryCardHtml
+  } else if (currentFilter === 'expense') {
+    summaryHtml = expenseSummaryCardHtml
+  }
+
+  // 2) 필터링된 내역 항목 HTML 생성
   const filtered = currentRecords.filter(item => {
     if (currentFilter === 'all') return true
     return item.type === currentFilter
   })
 
+  let listHtml = ''
   if (filtered.length === 0) {
-    container.innerHTML = `<p style="color: #94a3b8; text-align: center; padding: 24px 0;">등록된 내역이 없습니다.</p>`
-    return
+    listHtml = `<p class="record-empty-message">등록된 내역이 없습니다.</p>`
+  } else {
+    listHtml = filtered.map(item => {
+      const isIncome = item.type === 'income'
+      const sign = isIncome ? '+' : '-'
+      const badgeClass = isIncome ? 'income' : 'expense'
+      const amountClass = isIncome ? 'income' : 'expense'
+      const linkedGoal = getLinkedGoal(item)
+
+      return `
+        <div class="record-item">
+          <div class="record-left">
+            <div class="record-badge ${badgeClass}">${isIncome ? '₩' : '−'}</div>
+            <div class="record-texts">
+              <div class="record-cat-row">
+                <span class="record-category">${escapeHtml(item.category)}</span>
+                ${linkedGoal ? `<span class="badge-asset-link">💎 ${escapeHtml(linkedGoal.category_name)}</span>` : ''}
+              </div>
+              ${item.memo ? `<span class="record-memo">${escapeHtml(item.memo)}</span>` : ''}
+            </div>
+          </div>
+          <div class="record-right">
+            <span class="record-amount ${amountClass}">
+              ${sign}${Number(item.amount).toLocaleString()}원
+            </span>
+            <div class="record-actions">
+              <button onclick="window.openEditModal('${item.id}')" class="btn-edit-record" title="수정">
+                <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+              </button>
+              <button onclick="window.handleDeleteRecord('${item.id}')" class="btn-delete-record" title="삭제">&times;</button>
+            </div>
+          </div>
+        </div>
+      `
+    }).join('')
   }
 
-  container.innerHTML = filtered.map(item => {
-    const isIncome = item.type === 'income'
-    const sign = isIncome ? '+' : '-'
-    const badgeClass = isIncome ? 'income' : 'expense'
-    const amountClass = isIncome ? 'income' : 'expense'
-
-    return `
-      <div class="record-item">
-        <div class="record-left">
-          <div class="record-badge ${badgeClass}">${isIncome ? '₩' : '−'}</div>
-          <div class="record-texts">
-            <span class="record-category">${escapeHtml(item.category)}</span>
-            ${item.memo ? `<span class="record-memo">${escapeHtml(item.memo)}</span>` : ''}
-          </div>
-        </div>
-        <div class="record-right">
-          <span class="record-amount ${amountClass}">
-            ${sign}${Number(item.amount).toLocaleString()}원
-          </span>
-          <div class="record-actions">
-            <button onclick="window.openEditModal('${item.id}')" class="btn-edit-record" title="수정">
-              <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-            </button>
-            <button onclick="window.handleDeleteRecord('${item.id}')" class="btn-delete-record" title="삭제">&times;</button>
-          </div>
-        </div>
-      </div>
-    `
-  }).join('')
+  // 상단 요약 카드 + 내역 리스트 함께 바인딩
+  container.innerHTML = summaryHtml + listHtml
 }
 
 // HTML 이스케이프 유틸리티
@@ -329,15 +671,17 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;')
 }
 
-// 4. 모달 저장 버튼 핸들러 (추가 또는 수정 분기)
+// 4. 모달 저장 버튼 핸들러 (추가 또는 수정 분기 및 자산 목표 자동 연동)
 async function submitRecord() {
   const categoryInput = document.getElementById('new-category')
   const amountInput = document.getElementById('new-amount')
   const memoInput = document.getElementById('new-memo')
+  const targetSelect = document.getElementById('target-link-select')
 
   const category = categoryInput.value.trim()
   const amount = Number(amountInput.value)
-  const memo = memoInput.value.trim()
+  let memo = memoInput.value.trim()
+  const selectedGoalName = targetSelect ? targetSelect.value.trim() : ''
 
   if (!category) {
     alert('항목 이름을 입력해주세요!')
@@ -351,9 +695,50 @@ async function submitRecord() {
     return
   }
 
+  // 연결할 자산 목표 식별
+  let linkedGoal = null
+  if (selectedGoalName) {
+    linkedGoal = availableAssetGoals.find(g => g.category_name.trim() === selectedGoalName)
+  } else {
+    linkedGoal = availableAssetGoals.find(g => g.category_name.trim() === category)
+  }
+
+  // 메모에 자산 목표 태그 유지 또는 부착
+  if (linkedGoal) {
+    const tag = `[🎯${linkedGoal.category_name}]`
+    if (!memo.includes(tag)) {
+      memo = memo ? `${memo} ${tag}` : tag
+    }
+  }
+
   if (editingRecordId) {
     // [수정 로직]
     try {
+      const oldRecord = currentRecords.find(r => String(r.id) === String(editingRecordId))
+      const oldLinkedGoal = oldRecord ? getLinkedGoal(oldRecord) : null
+
+      // 1. 기존 연동 목표 금액 롤백
+      if (oldLinkedGoal) {
+        const rollbackAmount = Math.max(0, Number(oldLinkedGoal.current_amount) - Number(oldRecord.amount))
+        await supabase
+          .from('budgets_and_categories')
+          .update({ current_amount: rollbackAmount })
+          .eq('id', oldLinkedGoal.id)
+        oldLinkedGoal.current_amount = rollbackAmount
+      }
+
+      // 2. 새 연동 목표 금액 적용 (저축성 지출 및 목표 수입 반영)
+      if (linkedGoal) {
+        const targetGoalInCache = availableAssetGoals.find(g => g.id === linkedGoal.id) || linkedGoal
+        const newGoalAmount = Number(targetGoalInCache.current_amount) + amount
+        await supabase
+          .from('budgets_and_categories')
+          .update({ current_amount: newGoalAmount })
+          .eq('id', targetGoalInCache.id)
+        targetGoalInCache.current_amount = newGoalAmount
+      }
+
+      // 3. 내역 업데이트
       const { error } = await supabase
         .from('monthly_records')
         .update({
@@ -378,6 +763,20 @@ async function submitRecord() {
     const currentYM = getYearMonthString(currentDate)
 
     try {
+      // 1. 자산 목표 연동 시 해당 목표의 current_amount 증가 (저축성 지출/적립)
+      if (linkedGoal) {
+        const targetGoalInCache = availableAssetGoals.find(g => g.id === linkedGoal.id) || linkedGoal
+        const newGoalAmount = Number(targetGoalInCache.current_amount) + amount
+        const { error: goalErr } = await supabase
+          .from('budgets_and_categories')
+          .update({ current_amount: newGoalAmount })
+          .eq('id', targetGoalInCache.id)
+
+        if (goalErr) console.warn('목표 금액 연동 업데이트 경고:', goalErr.message)
+        else targetGoalInCache.current_amount = newGoalAmount
+      }
+
+      // 2. 내역 추가
       const { error } = await supabase
         .from('monthly_records')
         .insert([
@@ -407,6 +806,19 @@ async function deleteRecord(id) {
   if (!confirm('이 내역을 삭제하시겠습니까?')) return
 
   try {
+    const targetRecord = currentRecords.find(r => String(r.id) === String(id))
+    const linkedGoal = targetRecord ? getLinkedGoal(targetRecord) : null
+
+    // 연동된 목표가 있다면 금액 롤백
+    if (linkedGoal) {
+      const rollbackAmount = Math.max(0, Number(linkedGoal.current_amount) - Number(targetRecord.amount))
+      await supabase
+        .from('budgets_and_categories')
+        .update({ current_amount: rollbackAmount })
+        .eq('id', linkedGoal.id)
+      linkedGoal.current_amount = rollbackAmount
+    }
+
     const { error } = await supabase
       .from('monthly_records')
       .delete()
@@ -458,11 +870,11 @@ function renderTemplateChips() {
   const container = document.getElementById('template-chips')
   if (!container) return
 
-  const list = QUICK_TEMPLATES[selectedType] || []
+  const list = (userTemplates && userTemplates[selectedType]) || []
 
   container.innerHTML = list.map(item => `
     <button type="button" class="template-chip" onclick="window.applyTemplate('${escapeHtml(item.name)}', ${item.amount}, this)">
-      <span>${item.icon}</span>
+      <span>${item.icon || '📌'}</span>
       <span>${escapeHtml(item.name)}</span>
     </button>
   `).join('')
@@ -476,6 +888,19 @@ function applyTemplate(name, amount, btnElem) {
   if (amtInput) {
     amtInput.value = amount
     amtInput.focus()
+  }
+
+  // 자산 목표 일치 여부 확인 후 드롭다운 자동 동기화
+  const select = document.getElementById('target-link-select')
+  if (select) {
+    const matched = availableAssetGoals.find(g => g.category_name.trim() === name.trim())
+    if (matched) {
+      select.value = matched.category_name
+      updateTargetLinkTip(matched.category_name)
+    } else {
+      select.value = ''
+      updateTargetLinkTip('')
+    }
   }
 
   // 칩 활성화 스타일 표시
@@ -497,6 +922,11 @@ function selectType(type) {
     incomeBtn.className = 'type-btn'
   }
 
+  const select = document.getElementById('target-link-select')
+  if (select) {
+    updateTargetLinkTip(select.value)
+  }
+
   // 템플릿 칩 갱신
   renderTemplateChips()
 }
@@ -511,6 +941,7 @@ function openModal() {
   document.getElementById('new-amount').value = ''
   document.getElementById('new-memo').value = ''
 
+  populateTargetLinkDropdown('')
   selectType('expense') // 기본 지출 선택 및 템플릿 렌더링
   document.getElementById('add-modal').style.display = 'flex'
   document.getElementById('new-category').focus()
@@ -529,6 +960,8 @@ function openEditModal(id) {
   document.getElementById('new-amount').value = item.amount || ''
   document.getElementById('new-memo').value = item.memo || ''
 
+  const linked = getLinkedGoal(item)
+  populateTargetLinkDropdown(linked ? linked.category_name : '')
   selectType(item.type || 'expense')
   document.getElementById('add-modal').style.display = 'flex'
   document.getElementById('new-category').focus()
@@ -540,178 +973,151 @@ function closeModal() {
 }
 
 // =======================================================
-// 📋 9. 전달 내역 가져오기 (고정비/반복 내역 복사) 로직
+// ⚙️ 9. 빠른 템플릿 관리(직접 추가/삭제/초기화) 로직
 // =======================================================
 
-// 전달 내역 복사 모달 열기
-async function openCopyModal() {
-  const prevYM = getPrevYearMonthString(currentDate)
-  const currentYM = getYearMonthString(currentDate)
+// 템플릿 관리 모달 열기
+function openTemplateManager() {
+  currentTemplateTab = selectedType || 'expense'
+  switchTemplateTab(currentTemplateTab)
+  document.getElementById('template-manage-modal').style.display = 'flex'
+}
 
-  const subtitle = document.getElementById('copy-modal-subtitle')
-  const listContainer = document.getElementById('copy-item-list')
-  const checkAll = document.getElementById('copy-check-all')
-  const submitBtn = document.getElementById('btn-submit-copy')
-  const countBadge = document.getElementById('copy-selected-count')
+// 템플릿 관리 모달 닫기
+function closeTemplateManager() {
+  document.getElementById('template-manage-modal').style.display = 'none'
+  renderTemplateChips() // 메인 모달의 칩 목록 동기화
+}
 
-  subtitle.textContent = `지난달(${prevYM}) 내역 중 이번 달(${currentYM})로 복사할 항목을 선택하세요.`
-  listContainer.innerHTML = '<div style="text-align: center; padding: 24px 0; color: #94a3b8; font-size: 13px;">지난달 내역을 불러오는 중...</div>'
-  document.getElementById('copy-modal').style.display = 'flex'
+// 템플릿 탭 전환 (지출/수입)
+function switchTemplateTab(type) {
+  currentTemplateTab = type
+  const tabExpense = document.getElementById('tmpl-tab-expense')
+  const tabIncome = document.getElementById('tmpl-tab-income')
 
-  try {
-    const { data, error } = await supabase
-      .from('monthly_records')
-      .select('*')
-      .eq('year_month', prevYM)
-      .order('created_at', { ascending: true })
-
-    if (error) throw error
-
-    prevMonthRecordsCache = data || []
-
-    if (prevMonthRecordsCache.length === 0) {
-      listContainer.innerHTML = `<div style="text-align: center; padding: 36px 0; color: #94a3b8; font-size: 13px;">지난달(${prevYM})에 등록된 내역이 없습니다.</div>`
-      checkAll.disabled = true
-      checkAll.checked = false
-      submitBtn.disabled = true
-      submitBtn.textContent = '가져오기'
-      countBadge.textContent = '0개 선택'
-      return
+  if (tabExpense && tabIncome) {
+    if (type === 'income') {
+      tabIncome.className = 'type-btn active income'
+      tabExpense.className = 'type-btn'
+    } else {
+      tabExpense.className = 'type-btn active expense'
+      tabIncome.className = 'type-btn'
     }
-
-    checkAll.disabled = false
-    checkAll.checked = true
-    submitBtn.disabled = false
-
-    // 이전 달 항목 렌더링 (기본 전체 체크)
-    listContainer.innerHTML = prevMonthRecordsCache.map(item => {
-      const isIncome = item.type === 'income'
-      const badgeClass = isIncome ? 'income' : 'expense'
-      const badgeText = isIncome ? '수입' : '지출'
-      const sign = isIncome ? '+' : '-'
-
-      return `
-        <div class="copy-item-row" onclick="window.toggleCopyItemRow(event, '${item.id}')">
-          <div class="copy-item-left">
-            <input type="checkbox" class="copy-item-checkbox" value="${item.id}" checked onchange="window.updateCopyCount()">
-            <div class="copy-item-info">
-              <span class="copy-item-name">${escapeHtml(item.category)}</span>
-              ${item.memo ? `<span class="copy-item-memo">${escapeHtml(item.memo)}</span>` : ''}
-            </div>
-          </div>
-          <div class="copy-item-right">
-            <span class="copy-item-badge ${badgeClass}">${badgeText}</span>
-            <span class="copy-item-amount ${badgeClass}">${sign}${Number(item.amount).toLocaleString()}원</span>
-          </div>
-        </div>
-      `
-    }).join('')
-
-    updateCopyCount()
-
-  } catch (error) {
-    console.error('전달 내역 조회 실패:', error.message)
-    listContainer.innerHTML = '<div style="text-align: center; padding: 24px 0; color: #ef4444; font-size: 13px;">데이터를 불러오지 못했습니다.</div>'
-  }
-}
-
-// 아이템 행 클릭 시 체크박스 토글
-function toggleCopyItemRow(event, id) {
-  // 체크박스 자체 클릭 시 중복 처리 방지
-  if (event.target.classList.contains('copy-item-checkbox')) return
-
-  const checkbox = document.querySelector(`.copy-item-checkbox[value="${id}"]`)
-  if (checkbox) {
-    checkbox.checked = !checkbox.checked
-    updateCopyCount()
-  }
-}
-
-// 전체 선택/해제 토글
-function toggleAllCopyChecks(checked) {
-  const checkboxes = document.querySelectorAll('.copy-item-checkbox')
-  checkboxes.forEach(cb => {
-    cb.checked = checked
-  })
-  updateCopyCount()
-}
-
-// 선택된 개수 및 버튼 텍스트 업데이트
-function updateCopyCount() {
-  const checkedBoxes = document.querySelectorAll('.copy-item-checkbox:checked')
-  const allBoxes = document.querySelectorAll('.copy-item-checkbox')
-  const count = checkedBoxes.length
-
-  const countBadge = document.getElementById('copy-selected-count')
-  const submitBtn = document.getElementById('btn-submit-copy')
-  const checkAll = document.getElementById('copy-check-all')
-
-  if (countBadge) countBadge.textContent = `${count}개 선택`
-  if (submitBtn) {
-    submitBtn.textContent = count > 0 ? `${count}개 내역 가져오기` : '가져오기'
-    submitBtn.disabled = (count === 0)
   }
 
-  if (checkAll && allBoxes.length > 0) {
-    checkAll.checked = (checkedBoxes.length === allBoxes.length)
-  }
+  renderTemplateManagerList()
 }
 
-// 선택한 내역 일괄 복사 (Bulk Insert)
-async function handleCopyRecords() {
-  const checkedBoxes = document.querySelectorAll('.copy-item-checkbox:checked')
-  const selectedIds = Array.from(checkedBoxes).map(cb => cb.value)
+// 템플릿 관리 목록 렌더링
+function renderTemplateManagerList() {
+  const container = document.getElementById('template-manage-list')
+  if (!container) return
 
-  if (selectedIds.length === 0) {
-    alert('가져올 내역을 1개 이상 선택해주세요!')
+  const list = (userTemplates && userTemplates[currentTemplateTab]) || []
+
+  if (list.length === 0) {
+    container.innerHTML = '<div style="text-align: center; padding: 24px 0; color: #94a3b8; font-size: 13px;">등록된 템플릿이 없습니다. 위에서 새 항목을 추가해보세요.</div>'
     return
   }
 
-  const currentYM = getYearMonthString(currentDate)
-
-  // 복사 대상 레코드 생성 (새로운 월 값 적용)
-  const recordsToInsert = prevMonthRecordsCache
-    .filter(r => selectedIds.includes(String(r.id)))
-    .map(r => ({
-      year_month: currentYM,
-      type: r.type,
-      category: r.category,
-      amount: Number(r.amount),
-      memo: r.memo || null
-    }))
-
-  const submitBtn = document.getElementById('btn-submit-copy')
-  if (submitBtn) {
-    submitBtn.disabled = true
-    submitBtn.textContent = '가져오는 중...'
-  }
-
-  try {
-    const { error } = await supabase
-      .from('monthly_records')
-      .insert(recordsToInsert)
-
-    if (error) throw error
-
-    closeCopyModal()
-    fetchMonthlyData()
-
-  } catch (error) {
-    console.error('내역 복사 실패:', error.message)
-    alert('내역을 가져오는 중 오류가 발생했습니다.')
-    if (submitBtn) submitBtn.disabled = false
-  }
+  container.innerHTML = list.map((item, index) => {
+    const isIncome = currentTemplateTab === 'income'
+    const colorClass = isIncome ? 'income' : 'expense'
+    return `
+      <div class="template-manage-item">
+        <div class="template-item-left">
+          <span class="template-item-icon">${item.icon || '📌'}</span>
+          <span class="template-item-name">${escapeHtml(item.name)}</span>
+        </div>
+        <div class="template-item-right">
+          <span class="template-item-amount ${colorClass}">${Number(item.amount || 0).toLocaleString()}원</span>
+          <button type="button" class="btn-delete-template" onclick="window.handleDeleteTemplate(${index})" title="삭제">
+            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
+        </div>
+      </div>
+    `
+  }).join('')
 }
 
-function closeCopyModal() {
-  document.getElementById('copy-modal').style.display = 'none'
-  prevMonthRecordsCache = []
+// 신규 템플릿 추가
+function handleAddNewTemplate() {
+  const iconInput = document.getElementById('tmpl-input-icon')
+  const nameInput = document.getElementById('tmpl-input-name')
+  const amountInput = document.getElementById('tmpl-input-amount')
+
+  const icon = (iconInput?.value || '').trim() || (currentTemplateTab === 'income' ? '💰' : '💸')
+  const name = (nameInput?.value || '').trim()
+  const amount = Number(amountInput?.value) || 0
+
+  if (!name) {
+    alert('항목 이름을 입력해주세요!')
+    nameInput?.focus()
+    return
+  }
+
+  if (!userTemplates[currentTemplateTab]) {
+    userTemplates[currentTemplateTab] = []
+  }
+
+  userTemplates[currentTemplateTab].push({
+    name,
+    amount,
+    icon
+  })
+
+  saveTemplates(userTemplates)
+
+  // 입력 폼 초기화
+  if (nameInput) nameInput.value = ''
+  if (amountInput) amountInput.value = ''
+
+  renderTemplateManagerList()
+  renderTemplateChips()
+}
+
+// 템플릿 삭제
+function handleDeleteTemplate(index) {
+  if (!userTemplates[currentTemplateTab] || !userTemplates[currentTemplateTab][index]) return
+
+  const item = userTemplates[currentTemplateTab][index]
+  if (!confirm(`'${item.name}' 템플릿을 삭제하시겠습니까?`)) return
+
+  userTemplates[currentTemplateTab].splice(index, 1)
+  saveTemplates(userTemplates)
+
+  renderTemplateManagerList()
+  renderTemplateChips()
+}
+
+// 템플릿 기본값 초기화
+function handleResetTemplates() {
+  if (!confirm('기본 템플릿 목록으로 초기화하시겠습니까? 직접 추가한 항목이 삭제될 수 있습니다.')) return
+
+  userTemplates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES))
+  saveTemplates(userTemplates)
+
+  renderTemplateManagerList()
+  renderTemplateChips()
 }
 
 // 이벤트 리스너 등록
 document.getElementById('btn-prev-month').addEventListener('click', prevMonth)
 document.getElementById('btn-next-month').addEventListener('click', nextMonth)
 document.getElementById('month-picker').addEventListener('change', onMonthPickerChange)
+
+// 카테고리 직접 입력 시 자산 목표 자동 매칭 이벤트
+document.getElementById('new-category')?.addEventListener('input', (e) => {
+  const val = (e.target.value || '').trim()
+  const select = document.getElementById('target-link-select')
+  if (select && val) {
+    const matched = availableAssetGoals.find(g => g.category_name.trim() === val)
+    if (matched && select.value !== matched.category_name) {
+      select.value = matched.category_name
+      updateTargetLinkTip(matched.category_name)
+    }
+  }
+})
 
 // 전역 함수 등록
 window.openModal = openModal
@@ -723,14 +1129,16 @@ window.handleDeleteRecord = deleteRecord
 window.setFilter = setFilter
 window.selectType = selectType
 window.applyTemplate = applyTemplate
+window.toggleChartDetail = toggleChartDetail
+window.handleTargetLinkChange = handleTargetLinkChange
 
-// 복사 관련 전역 함수 등록
-window.openCopyModal = openCopyModal
-window.closeCopyModal = closeCopyModal
-window.toggleAllCopyChecks = toggleAllCopyChecks
-window.toggleCopyItemRow = toggleCopyItemRow
-window.updateCopyCount = updateCopyCount
-window.handleCopyRecords = handleCopyRecords
+// 템플릿 관리 관련 전역 함수 등록
+window.openTemplateManager = openTemplateManager
+window.closeTemplateManager = closeTemplateManager
+window.switchTemplateTab = switchTemplateTab
+window.handleAddNewTemplate = handleAddNewTemplate
+window.handleDeleteTemplate = handleDeleteTemplate
+window.handleResetTemplates = handleResetTemplates
 
 // 초기 실행
 fetchMonthlyData()

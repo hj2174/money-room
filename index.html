@@ -12,11 +12,26 @@
         <!-- 💰 현재 총 자산 요약 구역 (파스텔 그라데이션 + 3D 저금통 일러스트) -->
         <div class="total-asset-box">
             <div class="total-asset-left">
-                <div class="title">
-                    <svg viewBox="0 0 24 24"><path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/></svg>
-                    현재 총 자산
+                <div class="title-row">
+                    <div class="title">
+                        <svg viewBox="0 0 24 24"><path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/></svg>
+                        현재 총 자산
+                    </div>
+                    <button type="button" onclick="window.openBaseAssetModal()" class="btn-base-asset-setting" title="기초 자산 설정">
+                        ⚙️ 기초자산
+                    </button>
                 </div>
                 <div id="total-asset-amount" class="amount privacy-mask" title="살짝 대거나 터치하면 금액이 표시됩니다">0원</div>
+
+                <!-- 🎯 자산 배분 구조 요약 정보 바 -->
+                <div class="asset-allocation-box">
+                    <div id="allocation-stat-row" class="allocation-stat-row">
+                        <span class="alloc-item">💵 보유현금 <strong id="unallocated-amount">0원</strong></span>
+                    </div>
+                    <div class="allocation-track">
+                        <div id="allocation-bar-fill" class="allocation-bar-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- 파스텔 3D 돼지저금통 & 코인 장식 SVG -->
@@ -44,6 +59,27 @@
             <span class="plus-circle">+</span>
             새로운 자산/목표 추가하기
         </button>
+
+        <!-- 📑 목표 진행 필터 탭 (진행중 / 완료) -->
+        <div class="filter-tabs">
+            <button type="button" class="filter-btn active" id="tab-ongoing" onclick="window.setGoalTab('ongoing')">진행중</button>
+            <button type="button" class="filter-btn" id="tab-completed" onclick="window.setGoalTab('completed')">완료</button>
+        </div>
+
+        <!-- 기초 자산 설정 모달 -->
+        <div id="base-asset-modal" class="modal-overlay">
+            <div class="modal-content">
+                <h2>기초 자산(초기 자본) 설정</h2>
+                <p class="modal-desc-sub">머니룸 기록 시작 전 보유하고 계신 기초 자본금을 입력해주세요.<br>누적 월별 수지(총 수입 - 일반 지출)와 합산되어 총 자산이 계산됩니다.</p>
+                <div class="form-group">
+                    <input type="number" id="base-asset-input" placeholder="기초 자산 금액 (원)">
+                </div>
+                <div class="modal-buttons">
+                    <button onclick="window.handleSaveBaseAsset()" class="btn-primary">저장</button>
+                    <button onclick="window.closeBaseAssetModal()" class="btn-close">취소</button>
+                </div>
+            </div>
+        </div>
 
         <!-- 팝업 모달 -->
         <div id="add-modal" class="modal-overlay">

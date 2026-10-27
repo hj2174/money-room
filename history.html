@@ -23,51 +23,49 @@
         <div id="flow-summary-box" class="flow-summary-box">
             <div class="title">이달의 잔여 현금 흐름 (수입 - 지출)</div>
             <div id="net-amount" class="main-amount">0원</div>
-            <div class="flow-grid">
-                <div class="flow-item">
-                    <div class="label">총 수입</div>
-                    <div id="total-income" class="value">0원</div>
+        </div>
+
+        <!-- 📊 통합 월간 분석 카드: 지난달 비교 & 카테고리별 지출 비중 (한 줄 가로 배치) -->
+        <div id="monthly-report-card" class="monthly-report-card">
+            <div class="report-row">
+                <!-- 좌측: 지난달 비교 -->
+                <div class="report-col report-compare-col">
+                    <div class="compare-header">
+                        <span class="compare-title">⚖️ 지난달 비교</span>
+                        <span id="compare-prev-month-label" class="compare-prev-month">전월 대비</span>
+                    </div>
+                    <div id="compare-content" class="compare-content">
+                        <span>데이터를 불러오는 중...</span>
+                    </div>
                 </div>
-                <div class="flow-item">
-                    <div class="label">총 지출</div>
-                    <div id="total-expense" class="value">0원</div>
+
+                <!-- 중앙 세로 구분선 -->
+                <div class="report-v-divider"></div>
+
+                <!-- 우측: 카테고리별 지출 비중 -->
+                <div class="report-col report-chart-col">
+                    <div class="chart-col-header">
+                        <span class="chart-card-title">📊 지출 비중</span>
+                        <button type="button" id="btn-toggle-chart-detail" class="btn-toggle-detail" onclick="window.toggleChartDetail()">
+                            <span>상세</span>
+                            <svg class="icon-toggle-arrow" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+                        </button>
+                    </div>
+                    <div id="chart-graph-wrap" class="chart-graph-wrap">
+                        <div class="chart-empty-message">분석 중...</div>
+                    </div>
                 </div>
             </div>
+
+            <!-- 하단: 상세 보기 클릭 시 한 줄 아래로 펼쳐지는 카테고리별 리스트 -->
+            <div id="chart-legend-container" class="chart-legend-list"></div>
         </div>
 
-        <!-- 🔄 지난달 대비 비교 구역 -->
-        <div id="compare-box" class="compare-box">
-            <div class="compare-header">
-                <span class="compare-title">⚖️ 지난달 비교</span>
-                <span id="compare-prev-month-label" class="compare-prev-month">지난달 대비</span>
-            </div>
-            <div id="compare-content" class="compare-content">
-                <span>데이터를 불러오는 중...</span>
-            </div>
-        </div>
-
-        <!-- 📊 카테고리별 지출 비중 시각화 카드 -->
-        <div id="expense-chart-box" class="expense-chart-card">
-            <div class="chart-card-header">
-                <span class="chart-card-title">📊 카테고리별 지출 비중</span>
-                <span id="chart-total-expense" class="chart-card-total">0원</span>
-            </div>
-            <div id="chart-card-body" class="chart-card-body">
-                <div class="chart-empty-message">지출 내역을 분석하는 중...</div>
-            </div>
-        </div>
-
-        <!-- 액션 버튼 영역 (내역 추가 & 전달 내역 가져오기) -->
-        <div class="history-action-buttons">
-            <button onclick="window.openModal()" class="btn-open-modal">
-                <span class="plus-circle">+</span>
-                내역 추가
-            </button>
-            <button onclick="window.openCopyModal()" class="btn-open-modal btn-copy-action">
-                <span class="copy-circle">📋</span>
-                전달 내역 가져오기
-            </button>
-        </div>
+        <!-- [+ 내역 추가] 오픈 버튼 -->
+        <button onclick="window.openModal()" class="btn-open-modal">
+            <span class="plus-circle">+</span>
+            수입/지출 내역 추가하기
+        </button>
 
         <!-- 📑 내역 필터 탭 (전체 / 수입 / 지출) -->
         <div class="filter-tabs">
@@ -96,10 +94,22 @@
                 <div class="template-section">
                     <div class="template-header">
                         <span class="template-title">⚡ 자주 쓰는 템플릿</span>
+                        <button type="button" onclick="window.openTemplateManager()" class="btn-manage-template">⚙️ 템플릿 직접 설정</button>
                     </div>
                     <div id="template-chips" class="template-chips-wrap">
                         <!-- 동적으로 렌더링됨 -->
                     </div>
+                </div>
+
+                <!-- 🎯 자산 목표 연동 (저축성 지출/적립) -->
+                <div class="asset-link-section">
+                    <label for="target-link-select" class="asset-link-label">
+                        <span>🎯 자산 목표 연동 / 저축성 배분 (선택)</span>
+                    </label>
+                    <select id="target-link-select" class="asset-link-select" onchange="window.handleTargetLinkChange(this.value)">
+                        <option value="">-- 연동 안 함 (일반 생활 내역) --</option>
+                    </select>
+                    <div id="asset-link-tip" class="asset-link-tip"></div>
                 </div>
 
                 <div class="form-group">
@@ -114,29 +124,39 @@
             </div>
         </div>
 
-        <!-- 팝업 모달 2: 전달 내역 가져오기 (고정비/반복 내역 복사) -->
-        <div id="copy-modal" class="modal-overlay">
-            <div class="modal-content modal-copy-content">
+        <!-- 팝업 모달 2: 템플릿 직접 관리/설정 -->
+        <div id="template-manage-modal" class="modal-overlay">
+            <div class="modal-content modal-template-content">
                 <div class="modal-copy-header">
-                    <h2>전달 내역 가져오기</h2>
-                    <p id="copy-modal-subtitle" class="modal-copy-subtitle">지난달 등록된 내역을 이번 달로 일괄 복사합니다.</p>
+                    <h2>자주 쓰는 템플릿 설정</h2>
+                    <p class="modal-copy-subtitle">나만의 고정 수입/지출 항목과 금액을 직접 등록하세요.</p>
                 </div>
 
-                <div class="copy-select-all-wrap">
-                    <label class="custom-checkbox-label">
-                        <input type="checkbox" id="copy-check-all" onchange="window.toggleAllCopyChecks(this.checked)" checked>
-                        <span>전체 선택</span>
-                    </label>
-                    <span id="copy-selected-count" class="copy-count-badge">0개 선택</span>
+                <!-- 템플릿 타입 탭 -->
+                <div class="type-selector" style="margin-bottom: 10px;">
+                    <button type="button" id="tmpl-tab-expense" class="type-btn active expense" onclick="window.switchTemplateTab('expense')">지출 템플릿</button>
+                    <button type="button" id="tmpl-tab-income" class="type-btn" onclick="window.switchTemplateTab('income')">수입 템플릿</button>
                 </div>
 
-                <div id="copy-item-list" class="copy-item-list">
-                    <!-- 이전 달 내역들이 체크박스와 함께 렌더링됨 -->
+                <!-- 템플릿 추가 폼 -->
+                <div class="template-add-form">
+                    <div class="template-add-inputs">
+                        <input type="text" id="tmpl-input-icon" class="template-input-icon" placeholder="이모지" value="📌" maxlength="2">
+                        <input type="text" id="tmpl-input-name" class="template-input-name" placeholder="항목 이름 (예: 통신비)">
+                        <input type="number" id="tmpl-input-amount" class="template-input-amount" placeholder="기본 금액 (원)">
+                    </div>
+                    <button type="button" onclick="window.handleAddNewTemplate()" class="btn-add-template">+ 새 템플릿 등록</button>
                 </div>
+
+                <!-- 등록된 템플릿 목록 -->
+                <div id="template-manage-list" class="template-manage-list">
+                    <!-- 템플릿 항목들이 동적으로 렌더링됨 -->
+                </div>
+
+                <button type="button" onclick="window.handleResetTemplates()" class="btn-template-reset">🔄 기본 템플릿으로 초기화</button>
 
                 <div class="modal-buttons">
-                    <button id="btn-submit-copy" onclick="window.handleCopyRecords()" class="btn-primary">가져오기</button>
-                    <button onclick="window.closeCopyModal()" class="btn-close">취소</button>
+                    <button type="button" onclick="window.closeTemplateManager()" class="btn-primary">완료</button>
                 </div>
             </div>
         </div>
