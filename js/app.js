@@ -133,7 +133,7 @@ async function fetchCategories() {
                   ${getIconSvg(meta.icon)}
                 </div>
                 <div class="card-texts">
-                  <span class="card-title-text">${escapeHtml(item.category_name)}</span>
+                  <span class="card-title-text" id="title-${item.id}">${escapeHtml(item.category_name)}</span>
                   <span class="card-desc-text">${meta.desc}</span>
                 </div>
               </div>
@@ -144,42 +144,37 @@ async function fetchCategories() {
 
             <div class="card-divider-line"></div>
 
-            <!-- 3열 데이터 (이름 / 목표 / 현재) -->
-            <div class="card-data-grid">
-              <div class="card-data-col">
-                <span class="card-col-label">이름</span>
-                <div class="card-col-value" id="col-name-${item.id}">
-                  ${escapeHtml(item.category_name)}
+            <!-- 목표, 현재 금액 & 우측 수정 버튼 행 -->
+            <div class="card-main-row">
+              <div class="card-data-grid">
+                <div class="card-data-col">
+                  <span class="card-col-label">목표</span>
+                  <div class="card-col-value privacy-mask" id="col-target-${item.id}" title="살짝 대거나 터치하면 금액이 표시됩니다">
+                    ${formatKoreanAmount(item.target_amount)}
+                  </div>
+                </div>
+                <div class="card-data-col">
+                  <span class="card-col-label">현재</span>
+                  <div class="card-col-value privacy-mask" id="col-current-${item.id}" title="살짝 대거나 터치하면 금액이 표시됩니다">
+                    ${current.toLocaleString()}원
+                  </div>
                 </div>
               </div>
-              <div class="card-data-col">
-                <span class="card-col-label">목표</span>
-                <div class="card-col-value" id="col-target-${item.id}">
-                  ${formatKoreanAmount(item.target_amount)}
-                </div>
-              </div>
-              <div class="card-data-col">
-                <span class="card-col-label">현재</span>
-                <div class="card-col-value" id="col-current-${item.id}">
-                  ${current.toLocaleString()}원
-                </div>
-              </div>
-            </div>
 
-            <!-- 하단 프로그레스 바 & 수정 버튼 액션 -->
-            <div class="card-action-row">
-              <div class="card-progress-wrap">
-                <div class="card-progress-bar">
-                  <div class="card-progress-filled" style="width: ${percent}%;"></div>
-                </div>
-                <span class="card-progress-text">${percent}%</span>
-              </div>
-              
-              <div id="actions-${item.id}">
+              <!-- 우측 수정 버튼 액션 -->
+              <div class="card-action-wrap" id="actions-${item.id}">
                 <button onclick="window.enableEdit('${item.id}')" class="btn-card-edit">
                   수정 &gt;
                 </button>
               </div>
+            </div>
+
+            <!-- 한 줄 전체 차지하는 프로그레스 바 -->
+            <div class="card-progress-wrap">
+              <div class="card-progress-bar">
+                <div class="card-progress-filled" style="width: ${percent}%;"></div>
+              </div>
+              <span class="card-progress-text">${percent}%</span>
             </div>
           </div>
         `
@@ -195,24 +190,24 @@ async function fetchCategories() {
   }
 }
 
-// 2. 수정 모드 활성화 (수정 버튼 클릭 시 각 컬럼이 input으로 전환)
+// 2. 수정 모드 활성화 (수정 버튼 클릭 시 헤더 이름 및 목표/현재가 input으로 전환)
 function enableEdit(categoryId) {
   const item = categoryDataList.find(d => String(d.id) === String(categoryId))
   if (!item) return
 
-  const colName = document.getElementById(`col-name-${categoryId}`)
+  const titleElem = document.getElementById(`title-${categoryId}`)
   const colTarget = document.getElementById(`col-target-${categoryId}`)
   const colCurrent = document.getElementById(`col-current-${categoryId}`)
   const actionsDiv = document.getElementById(`actions-${categoryId}`)
 
-  if (!colName || !colTarget || !colCurrent || !actionsDiv) return
+  if (!titleElem || !colTarget || !colCurrent || !actionsDiv) return
 
-  // 3개 컬럼을 인풋창으로 교체
-  colName.innerHTML = `<input type="text" id="name-${categoryId}" class="card-col-input" value="${escapeHtml(item.category_name)}">`
+  // 헤더의 이름을 인풋창으로 교체
+  titleElem.innerHTML = `<input type="text" id="name-${categoryId}" class="card-title-input" value="${escapeHtml(item.category_name)}">`
   colTarget.innerHTML = `<input type="number" id="target-${categoryId}" class="card-col-input" value="${item.target_amount}">`
   colCurrent.innerHTML = `<input type="number" id="current-${categoryId}" class="card-col-input" value="${item.current_amount}">`
 
-  // 첫 번째 입력창 포커스
+  // 헤더 이름 입력창 포커스
   const nameInput = document.getElementById(`name-${categoryId}`)
   if (nameInput) nameInput.focus()
 
@@ -319,6 +314,25 @@ function closeModal() {
   document.getElementById('add-modal').style.display = 'none'
 }
 
+// 모바일 환경 터치 시 일시적 마스킹 해제 인터랙션 등록
+function initPrivacyMaskTouch() {
+  document.addEventListener('touchstart', (e) => {
+    const maskElem = e.target.closest('.privacy-mask')
+    if (maskElem) {
+      maskElem.classList.add('revealed')
+    }
+  }, { passive: true })
+
+  document.addEventListener('touchend', (e) => {
+    const maskElem = e.target.closest('.privacy-mask')
+    if (maskElem) {
+      setTimeout(() => {
+        maskElem.classList.remove('revealed')
+      }, 1200) // 터치 종료 후 1.2초 뒤 다시 블러 처리
+    }
+  }, { passive: true })
+}
+
 // 전역 등록
 window.enableEdit = enableEdit
 window.cancelEdit = cancelEdit
@@ -329,3 +343,4 @@ window.closeModal = closeModal
 
 // 초기 실행
 fetchCategories()
+initPrivacyMaskTouch()
