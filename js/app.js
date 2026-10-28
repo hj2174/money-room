@@ -7,16 +7,17 @@ let cachedTotalAsset = 0
 let cachedUnallocated = 0
 let currentGoalTab = 'ongoing' // 'ongoing' (진행중) | 'completed' (완료)
 
-// 저축성 지출(자산 목표 연동 지출) 여부 판별
+// 저축성 지출 및 자산 이동(이체) 여부 판별
 function isSavingsRecord(record, goalNames) {
   if (!record) return false
+  if (record.type === 'transfer') return true
   const memo = (record.memo || '').trim()
-  if (/\[(?:목표|🎯):([^\]]+)\]/.test(memo)) return true
+  if (/\[(?:목표|🎯):?([^\]]+)\]/.test(memo)) return true
   const cat = (record.category || '').trim()
   return goalNames.has(cat)
 }
 
-// 💰 전체 총자산 및 자산 배분 구조(배분액, 미배분 여유 자금) 계산
+// 💰 전체 총자산 및 자산 배분 구조(모금액, 보유현금) 계산
 function calculateAssets() {
   const targetItems = categoryDataList.filter(item => item.category_name !== '이번달 총 잔액')
   const goalNames = new Set(targetItems.map(item => (item.category_name || '').trim()))
@@ -35,6 +36,9 @@ function calculateAssets() {
       } else {
         totalLivingExpense += amt
       }
+    } else if (r.type === 'transfer') {
+      // 저금: 소비성 지출에서 제외되며 자산 목표 모금액으로 이동
+      totalSavingsExpense += amt
     }
   })
 

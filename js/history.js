@@ -9,7 +9,8 @@ let availableAssetGoals = [] // 연동 가능한 자산 목표 목록 (budgets_a
 let editingRecordId = null // 현재 수정 중인 레코드 ID (null이면 신규 추가)
 let isChartDetailOpen = false // 카테고리별 지출 비중 상세 보기 토글 상태 (기본값: 접힘)
 let currentTotalIncome = 0 // 당월 총 수입
-let currentTotalExpense = 0 // 당월 총 지출
+let currentTotalExpense = 0 // 당월 총 지출 (소비성 지출)
+let currentTotalTransfer = 0 // 당월 총 저금 (자산 이동)
 let activeChartSegmentIndex = null // 현재 툴팁이 활성화된 차트 세그먼트 인덱스
 let chartTooltipTimer = null // 차트 툴팁 자동 닫힘 타이머
 
@@ -30,6 +31,12 @@ const DEFAULT_TEMPLATES = {
     { name: '교통비', amount: 60000, icon: '🚌' },
     { name: '쇼핑', amount: 50000, icon: '🛍️' },
     { name: '공과금', amount: 80000, icon: '💡' }
+  ],
+  transfer: [
+    { name: '비상금 저금', amount: 100000, icon: '💳' },
+    { name: '적금 납입', amount: 300000, icon: '🏦' },
+    { name: '청년적금', amount: 500000, icon: '🌱' },
+    { name: '투자금 이체', amount: 200000, icon: '📈' }
   ]
 }
 
@@ -42,6 +49,9 @@ function loadTemplates() {
     if (saved) {
       const parsed = JSON.parse(saved)
       if (parsed.income && parsed.expense) {
+        if (!parsed.transfer) {
+          parsed.transfer = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES.transfer))
+        }
         return parsed
       }
     }
@@ -61,7 +71,7 @@ function saveTemplates(templates) {
 }
 
 let userTemplates = loadTemplates()
-let currentTemplateTab = 'expense' // 템플릿 관리 모달 현재 탭 (expense / income)
+let currentTemplateTab = 'expense' // 템플릿 관리 모달 현재 탭 (expense / income / transfer)
 
 // 🎨 차트 전용 파스텔 컬러 팔레트
 const CHART_COLORS = [
@@ -152,7 +162,7 @@ async function fetchMonthlyData() {
 
 // 2. 상단 요약, 차트 및 지난달 비교 렌더링
 function calculateAndRenderSummary(curRecords, prevRecords) {
-  // 당월 집계
+  // 당월 집계 (소비 지출: expense만 포함, 저금 transfer는 소비 지출에서 제외)
   const curIncome = curRecords
     .filter(r => r.type === 'income')
     .reduce((sum, r) => sum + Number(r.amount), 0)
@@ -161,11 +171,16 @@ function calculateAndRenderSummary(curRecords, prevRecords) {
     .filter(r => r.type === 'expense')
     .reduce((sum, r) => sum + Number(r.amount), 0)
 
+  const curTransfer = curRecords
+    .filter(r => r.type === 'transfer')
+    .reduce((sum, r) => sum + Number(r.amount), 0)
+
   const curNet = curIncome - curExpense
 
   // 전역 당월 집계 저장 (탭별 상단 요약 카드 렌더링에 사용)
   currentTotalIncome = curIncome
   currentTotalExpense = curExpense
+  currentTotalTransfer = curTransfer
 
   // 전월 집계
   const prevIncome = prevRecords
@@ -509,11 +524,20 @@ function renderComparison(curInc, curExp, curNet, prevInc, prevExp, prevNet, has
   `
 }
 
+// 🎯 메모 문자열에서 기존 목표 연동 태그([🎯목표명], [목표:목표명] 등)를 모두 제거하고 순수 메모만 반환
+function stripGoalTags(memo) {
+  if (!memo) return ''
+  return memo
+    .replace(/\[(?:목표|🎯):?[^\]]+\]/g, '')
+    .trim()
+    .replace(/\s{2,}/g, ' ')
+}
+
 // 🎯 레코드가 어떤 자산 목표와 연동되어 있는지 확인 (메모 태그 [🎯목표명] 또는 [목표:목표명] 또는 카테고리 일치)
 function getLinkedGoal(record) {
   if (!record || availableAssetGoals.length === 0) return null
   const memo = (record.memo || '').trim()
-  const tagMatch = memo.match(/\[(?:목표|🎯):([^\]]+)\]/)
+  const tagMatch = memo.match(/\[(?:목표|🎯):?([^\]]+)\]/)
   if (tagMatch) {
     const goalName = tagMatch[1].trim()
     const found = availableAssetGoals.find(g => g.category_name.trim() === goalName)
@@ -554,15 +578,22 @@ function updateTargetLinkTip(val) {
   const tip = document.getElementById('asset-link-tip')
   if (!tip) return
   if (!val) {
-    tip.innerHTML = ''
-    tip.classList.remove('active')
+    if (selectedType === 'transfer') {
+      tip.innerHTML = `💡 <strong>저금 안내</strong>: 입금할 목표 카드를 선택하면 대시보드의 해당 목표 모금액으로 자동 적립됩니다.`
+      tip.classList.add('active')
+    } else {
+      tip.innerHTML = ''
+      tip.classList.remove('active')
+    }
     return
   }
   tip.classList.add('active')
-  if (selectedType === 'expense') {
-    tip.innerHTML = `💎 <strong>저축성 지출</strong>: 총자산 내에서 [<strong>${escapeHtml(val)}</strong>] 목표의 현재 금액으로 자동 적립·배분됩니다.`
+  if (selectedType === 'transfer') {
+    tip.innerHTML = `💎 <strong>저금 (자산 이동)</strong>: 소비성 지출에서 제외되며, 대시보드 [<strong>${escapeHtml(val)}</strong>] 목표의 모금액(+)으로 자동 적립됩니다.`
+  } else if (selectedType === 'expense') {
+    tip.innerHTML = `💎 <strong>저축성 지출</strong>: 총자산 내에서 [<strong>${escapeHtml(val)}</strong>] 목표의 모금액으로 자동 적립됩니다.`
   } else {
-    tip.innerHTML = `💎 <strong>목표 수입</strong>: [<strong>${escapeHtml(val)}</strong>] 목표의 현재 금액에 직접 추가됩니다.`
+    tip.innerHTML = `💎 <strong>목표 수입</strong>: [<strong>${escapeHtml(val)}</strong>] 목표의 모금액에 직접 추가됩니다.`
   }
 }
 
@@ -593,7 +624,7 @@ function renderRecordList() {
         <div class="record-badge expense">−</div>
         <div class="record-texts">
           <span class="record-category">총 지출</span>
-          <span class="record-memo">이번 달 총 지출 합계</span>
+          <span class="record-memo">이번 달 총 소비 지출</span>
         </div>
       </div>
       <div class="record-right">
@@ -602,13 +633,30 @@ function renderRecordList() {
     </div>
   `
 
+  const transferSummaryCardHtml = `
+    <div class="record-item summary-card summary-transfer">
+      <div class="record-left">
+        <div class="record-badge transfer">⇄</div>
+        <div class="record-texts">
+          <span class="record-category">총 저금</span>
+          <span class="record-memo">이번 달 자산 이동 합계</span>
+        </div>
+      </div>
+      <div class="record-right">
+        <span class="record-amount transfer">${currentTotalTransfer.toLocaleString()}원</span>
+      </div>
+    </div>
+  `
+
   let summaryHtml = ''
   if (currentFilter === 'all') {
-    summaryHtml = incomeSummaryCardHtml + expenseSummaryCardHtml
+    summaryHtml = incomeSummaryCardHtml + expenseSummaryCardHtml + (currentTotalTransfer > 0 ? transferSummaryCardHtml : '')
   } else if (currentFilter === 'income') {
     summaryHtml = incomeSummaryCardHtml
   } else if (currentFilter === 'expense') {
     summaryHtml = expenseSummaryCardHtml
+  } else if (currentFilter === 'transfer') {
+    summaryHtml = transferSummaryCardHtml
   }
 
   // 2) 필터링된 내역 항목 HTML 생성
@@ -623,21 +671,28 @@ function renderRecordList() {
   } else {
     listHtml = filtered.map(item => {
       const isIncome = item.type === 'income'
-      const sign = isIncome ? '+' : '-'
-      const badgeClass = isIncome ? 'income' : 'expense'
-      const amountClass = isIncome ? 'income' : 'expense'
+      const isTransfer = item.type === 'transfer'
+      const sign = isIncome ? '+' : (isTransfer ? '⇄ ' : '-')
+      const badgeChar = isIncome ? '₩' : (isTransfer ? '⇄' : '−')
+      const badgeClass = isIncome ? 'income' : (isTransfer ? 'transfer' : 'expense')
+      const amountClass = isIncome ? 'income' : (isTransfer ? 'transfer' : 'expense')
       const linkedGoal = getLinkedGoal(item)
+      const displayMemo = stripGoalTags(item.memo)
+      const linkBadgeHtml = linkedGoal ? `
+        <span class="badge-asset-link">
+          <svg class="icon-asset-link" viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+          ${escapeHtml(linkedGoal.category_name)}
+        </span>
+      ` : ''
 
       return `
         <div class="record-item">
           <div class="record-left">
-            <div class="record-badge ${badgeClass}">${isIncome ? '₩' : '−'}</div>
+            <div class="record-badge ${badgeClass}">${badgeChar}</div>
             <div class="record-texts">
-              <div class="record-cat-row">
-                <span class="record-category">${escapeHtml(item.category)}</span>
-                ${linkedGoal ? `<span class="badge-asset-link">💎 ${escapeHtml(linkedGoal.category_name)}</span>` : ''}
-              </div>
-              ${item.memo ? `<span class="record-memo">${escapeHtml(item.memo)}</span>` : ''}
+              <span class="record-category">${escapeHtml(item.category)}</span>
+              ${linkBadgeHtml}
+              ${displayMemo ? `<span class="record-memo">${escapeHtml(displayMemo)}</span>` : ''}
             </div>
           </div>
           <div class="record-right">
@@ -695,20 +750,24 @@ async function submitRecord() {
     return
   }
 
-  // 연결할 자산 목표 식별
+  // 1. 순수 사용자 메모 추출 (이전 연동 태그를 완전히 제거하여 단 1개의 연동만 보장)
+  const pureMemo = stripGoalTags(memoInput.value)
+
+  // 2. 단일 자산 목표 식별
   let linkedGoal = null
   if (selectedGoalName) {
-    linkedGoal = availableAssetGoals.find(g => g.category_name.trim() === selectedGoalName)
-  } else {
-    linkedGoal = availableAssetGoals.find(g => g.category_name.trim() === category)
+    linkedGoal = availableAssetGoals.find(g => g.category_name.trim() === selectedGoalName) || null
+  } else if (!editingRecordId) {
+    // 신규 등록 시에만 카테고리명과 일치하는 목표가 있다면 자동 매칭
+    // (수정 시에는 사용자가 '-- 연동 안 함 --'을 선택했을 때 연동을 해제할 수 있도록 함)
+    linkedGoal = availableAssetGoals.find(g => g.category_name.trim() === category) || null
   }
 
-  // 메모에 자산 목표 태그 유지 또는 부착
+  // 3. 메모에 오직 1개의 목표 연동 태그만 부착 (연동이 없으면 순수 메모만 유지)
+  let finalMemo = pureMemo
   if (linkedGoal) {
     const tag = `[🎯${linkedGoal.category_name}]`
-    if (!memo.includes(tag)) {
-      memo = memo ? `${memo} ${tag}` : tag
-    }
+    finalMemo = pureMemo ? `${pureMemo} ${tag}` : tag
   }
 
   if (editingRecordId) {
@@ -745,7 +804,7 @@ async function submitRecord() {
           type: selectedType,
           category: category,
           amount: amount,
-          memo: memo || null
+          memo: finalMemo || null
         })
         .eq('id', editingRecordId)
 
@@ -785,7 +844,7 @@ async function submitRecord() {
             type: selectedType,
             category: category,
             amount: amount,
-            memo: memo || null
+            memo: finalMemo || null
           }
         ])
 
@@ -908,19 +967,16 @@ function applyTemplate(name, amount, btnElem) {
   if (btnElem) btnElem.classList.add('active')
 }
 
-// 모달 수입/지출 타입 선택
+// 모달 수입/지출/저금·이체 타입 선택
 function selectType(type) {
   selectedType = type
   const expenseBtn = document.getElementById('type-expense-btn')
   const incomeBtn = document.getElementById('type-income-btn')
+  const transferBtn = document.getElementById('type-transfer-btn')
 
-  if (type === 'income') {
-    incomeBtn.className = 'type-btn active income'
-    expenseBtn.className = 'type-btn'
-  } else {
-    expenseBtn.className = 'type-btn active expense'
-    incomeBtn.className = 'type-btn'
-  }
+  if (expenseBtn) expenseBtn.className = (type === 'expense') ? 'type-btn active expense' : 'type-btn'
+  if (incomeBtn) incomeBtn.className = (type === 'income') ? 'type-btn active income' : 'type-btn'
+  if (transferBtn) transferBtn.className = (type === 'transfer') ? 'type-btn active transfer' : 'type-btn'
 
   const select = document.getElementById('target-link-select')
   if (select) {
@@ -934,7 +990,7 @@ function selectType(type) {
 // 신규 추가 모달 열기
 function openModal() {
   editingRecordId = null
-  document.getElementById('modal-title').textContent = '수입/지출 내역 추가'
+  document.getElementById('modal-title').textContent = '내역 추가'
   document.getElementById('modal-submit-btn').textContent = '추가'
 
   document.getElementById('new-category').value = ''
@@ -953,12 +1009,12 @@ function openEditModal(id) {
   if (!item) return
 
   editingRecordId = id
-  document.getElementById('modal-title').textContent = '수입/지출 내역 수정'
+  document.getElementById('modal-title').textContent = '내역 수정'
   document.getElementById('modal-submit-btn').textContent = '수정 저장'
 
   document.getElementById('new-category').value = item.category || ''
   document.getElementById('new-amount').value = item.amount || ''
-  document.getElementById('new-memo').value = item.memo || ''
+  document.getElementById('new-memo').value = stripGoalTags(item.memo || '')
 
   const linked = getLinkedGoal(item)
   populateTargetLinkDropdown(linked ? linked.category_name : '')
@@ -989,21 +1045,16 @@ function closeTemplateManager() {
   renderTemplateChips() // 메인 모달의 칩 목록 동기화
 }
 
-// 템플릿 탭 전환 (지출/수입)
+// 템플릿 탭 전환 (지출/수입/저금·이체)
 function switchTemplateTab(type) {
   currentTemplateTab = type
   const tabExpense = document.getElementById('tmpl-tab-expense')
   const tabIncome = document.getElementById('tmpl-tab-income')
+  const tabTransfer = document.getElementById('tmpl-tab-transfer')
 
-  if (tabExpense && tabIncome) {
-    if (type === 'income') {
-      tabIncome.className = 'type-btn active income'
-      tabExpense.className = 'type-btn'
-    } else {
-      tabExpense.className = 'type-btn active expense'
-      tabIncome.className = 'type-btn'
-    }
-  }
+  if (tabExpense) tabExpense.className = (type === 'expense') ? 'type-btn active expense' : 'type-btn'
+  if (tabIncome) tabIncome.className = (type === 'income') ? 'type-btn active income' : 'type-btn'
+  if (tabTransfer) tabTransfer.className = (type === 'transfer') ? 'type-btn active transfer' : 'type-btn'
 
   renderTemplateManagerList()
 }
@@ -1022,7 +1073,8 @@ function renderTemplateManagerList() {
 
   container.innerHTML = list.map((item, index) => {
     const isIncome = currentTemplateTab === 'income'
-    const colorClass = isIncome ? 'income' : 'expense'
+    const isTransfer = currentTemplateTab === 'transfer'
+    const colorClass = isIncome ? 'income' : (isTransfer ? 'transfer' : 'expense')
     return `
       <div class="template-manage-item">
         <div class="template-item-left">
@@ -1046,7 +1098,8 @@ function handleAddNewTemplate() {
   const nameInput = document.getElementById('tmpl-input-name')
   const amountInput = document.getElementById('tmpl-input-amount')
 
-  const icon = (iconInput?.value || '').trim() || (currentTemplateTab === 'income' ? '💰' : '💸')
+  const defaultIcon = currentTemplateTab === 'income' ? '💰' : (currentTemplateTab === 'transfer' ? '🏦' : '💸')
+  const icon = (iconInput?.value || '').trim() || defaultIcon
   const name = (nameInput?.value || '').trim()
   const amount = Number(amountInput?.value) || 0
 
