@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>머니룸 - 가구 시스템 관리자 센터</title>
+    <link rel="stylesheet" href="./css/main.css">
+    <link rel="stylesheet" href="./styles/admin.css">
+</head>
+<body>
+
+    <div class="admin-wrapper">
+        <!-- 🛠️ 상단 관리자 전용 글로벌 네비게이션 헤더 -->
+        <header class="admin-header">
+            <div class="admin-header-inner">
+                <div class="admin-brand-group">
+                    <div class="admin-logo-badge">🛠️ Studio</div>
+                    <div class="admin-title-group">
+                        <h1 class="admin-title">머니룸 가구 카탈로그 관리자</h1>
+                        <span class="admin-subtitle">아이템 리소스 등록 및 Supabase DB 연동 매니저</span>
+                    </div>
+                </div>
+
+                <div class="admin-header-actions">
+                    <a href="mineroom.html" class="btn-admin-nav" title="실제 미니룸으로 이동">
+                        <span>🏡 미니룸 바로가기</span>
+                    </a>
+                    <button type="button" class="btn-admin-action btn-sql-guide" onclick="window.adminStudio.openSqlModal()">
+                        <span>📜 DB SQL 가이드</span>
+                    </button>
+                    <button type="button" class="btn-admin-action btn-seed-samples" onclick="window.adminStudio.seedSampleFurniture()">
+                        <span>📦 기본 샘플 세트 생성</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 📊 관리자 대시보드 메인 그리드 (좌측: 가구 등록/수정 폼 | 우측: 카탈로그 목록) -->
+        <main class="admin-main">
+            <div class="admin-grid-layout">
+                
+                <!-- 1. 좌측: 새로운 가구 아이템 등록 / 수정 패널 -->
+                <section class="admin-col admin-col-form">
+                    <div class="admin-card form-sticky-card">
+                        <div class="admin-card-header">
+                            <div class="form-mode-badge" id="form-mode-badge">✨ 신규 가구 등록</div>
+                            <h2 class="admin-card-title" id="form-card-title">새 가구 아이템 등록</h2>
+                            <p class="admin-card-desc">이미지/SVG 리소스와 규격을 설정하여 미니룸 상점에 즉시 반영합니다.</p>
+                        </div>
+
+                        <form id="furniture-form" class="admin-form" onsubmit="window.adminStudio.handleFormSubmit(event)">
+                            <input type="hidden" id="form-mode" value="create">
+
+                            <!-- 가구 기본 정보 -->
+                            <div class="form-row">
+                                <div class="form-group form-group-half">
+                                    <label for="furn-id" class="form-label">
+                                        가구 식별자 ID <span class="required">*</span>
+                                    </label>
+                                    <div class="input-with-btn">
+                                        <input type="text" id="furn-id" class="form-input" placeholder="예: bed_nordic_01" required>
+                                        <button type="button" class="btn-input-sub" onclick="window.adminStudio.generateRandomId()" title="랜덤 ID 생성">생성</button>
+                                    </div>
+                                </div>
+
+                                <div class="form-group form-group-half">
+                                    <label for="furn-name" class="form-label">
+                                        가구 이름 <span class="required">*</span>
+                                    </label>
+                                    <input type="text" id="furn-name" class="form-input" placeholder="예: 북유럽 원목 로우 베드" required>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group form-group-half">
+                                    <label for="furn-category" class="form-label">
+                                        상점 카테고리 <span class="required">*</span>
+                                    </label>
+                                    <select id="furn-category" class="form-select" onchange="window.adminStudio.handleCategoryChange(this.value)">
+                                        <option value="bed">🛏️ 침대 (bed)</option>
+                                        <option value="desk-chair">🪑 데스크/체어 (desk-chair)</option>
+                                        <option value="sofa-rug">🛋️ 소파/러그 (sofa-rug)</option>
+                                        <option value="decor-plant" selected>🪴 소품/플랜트 (decor-plant)</option>
+                                        <option value="wallpaper">🖼️ 배경 - 벽지 (wallpaper)</option>
+                                        <option value="flooring">🪵 배경 - 바닥재/마루 (flooring)</option>
+                                        <option value="window">🪟 배경 - 창문 (window)</option>
+                                        <option value="special">⭐ 스페셜 해금 (special)</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group form-group-half">
+                                    <label for="furn-price" class="form-label">
+                                        가격 (룸 포인트) <span class="required">*</span>
+                                    </label>
+                                    <div class="input-unit-wrap">
+                                        <input type="number" id="furn-price" class="form-input" min="0" step="10" value="0" required>
+                                        <span class="input-unit">P</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 그리드 점유 규격 (baseW, baseH) -->
+                            <div class="form-group">
+                                <label class="form-label">
+                                    그리드 점유 규격 (가로 x 세로 타일) <span class="required">*</span>
+                                </label>
+                                <div class="grid-preset-chips">
+                                    <button type="button" class="preset-chip active" data-w="1" data-h="1" onclick="window.adminStudio.setGridPreset(1, 1)">1x1 (소품/화분/체어)</button>
+                                    <button type="button" class="preset-chip" data-w="2" data-h="1" onclick="window.adminStudio.setGridPreset(2, 1)">2x1 (소파/데스크)</button>
+                                    <button type="button" class="preset-chip" data-w="1" data-h="2" onclick="window.adminStudio.setGridPreset(1, 2)">1x2 (종방향)</button>
+                                    <button type="button" class="preset-chip" data-w="2" data-h="2" onclick="window.adminStudio.setGridPreset(2, 2)">2x2 (대형 침대/러그)</button>
+                                </div>
+                                <div class="grid-inputs-row">
+                                    <div class="grid-input-item">
+                                        <span class="grid-input-label">가로 (W):</span>
+                                        <input type="number" id="furn-base-w" class="form-input" min="1" max="4" value="1" onchange="window.adminStudio.updateLivePreview()" required>
+                                        <span class="grid-input-unit">칸</span>
+                                    </div>
+                                    <span class="grid-multiply-sign">✕</span>
+                                    <div class="grid-input-item">
+                                        <span class="grid-input-label">세로 (H):</span>
+                                        <input type="number" id="furn-base-h" class="form-input" min="1" max="4" value="1" onchange="window.adminStudio.updateLivePreview()" required>
+                                        <span class="grid-input-unit">칸</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 아이템 설명 -->
+                            <div class="form-group">
+                                <label for="furn-desc" class="form-label">아이템 설명 (스토리 / 재질 / 감성 텍스트)</label>
+                                <textarea id="furn-desc" class="form-textarea" rows="2" placeholder="예: 내추럴 오크 원목과 소프트 패브릭이 어우러진 미니멀 가구."></textarea>
+                            </div>
+
+                            <!-- 스페셜 해금 조건 설정 (옵션) -->
+                            <div class="special-accordion-card">
+                                <div class="special-check-row">
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="furn-is-special" onchange="window.adminStudio.toggleSpecialFields(this.checked)">
+                                        <span class="checkbox-custom-mark"></span>
+                                        <span class="checkbox-text">🏆 스페셜 무료 해금 아이템으로 설정</span>
+                                    </label>
+                                </div>
+
+                                <div id="special-options-panel" class="special-options-panel" style="display: none;">
+                                    <div class="form-row">
+                                        <div class="form-group form-group-half">
+                                            <label for="furn-cond-type" class="form-label">해금 조건 유형</label>
+                                            <select id="furn-cond-type" class="form-select">
+                                                <option value="goal_count">금융 목표 달성 개수 (개)</option>
+                                                <option value="total_asset">총자산 금액 (원)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group form-group-half">
+                                            <label for="furn-cond-val" class="form-label">필요 달성 수치</label>
+                                            <input type="number" id="furn-cond-val" class="form-input" min="0" value="1" placeholder="예: 1 또는 5000000">
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="furn-cond-desc" class="form-label">해금 조건 안내 텍스트</label>
+                                        <input type="text" id="furn-cond-desc" class="form-input" placeholder="예: 금융 목표 1개 이상 달성 시 무료 해금">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 🖼️ 이미지/SVG 리소스 등록 섹션 -->
+                            <div class="form-group resource-section">
+                                <label class="form-label">
+                                    가구 리소스 등록 (이미지 파일 또는 SVG) <span class="required">*</span>
+                                </label>
+                                
+                                <div class="resource-tab-bar">
+                                    <button type="button" class="res-tab-btn active" data-restab="file" onclick="window.adminStudio.setResourceTab('file')">📁 파일 업로드</button>
+                                    <button type="button" class="res-tab-btn" data-restab="url" onclick="window.adminStudio.setResourceTab('url')">🔗 이미지 URL</button>
+                                    <button type="button" class="res-tab-btn" data-restab="svg" onclick="window.adminStudio.setResourceTab('svg')">✏️ SVG 코드</button>
+                                </div>
+
+                                <!-- 탭 1: 파일 업로드 -->
+                                <div id="res-pane-file" class="res-tab-pane active">
+                                    <div id="admin-dropzone" class="file-dropzone" onclick="document.getElementById('furn-file-input').click()">
+                                        <input type="file" id="furn-file-input" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" style="display: none;" onchange="window.adminStudio.handleFileSelect(this.files[0])">
+                                        <div class="dropzone-icon">☁️</div>
+                                        <div class="dropzone-text">이미지 또는 SVG 파일을 클릭하거나 드래그하세요</div>
+                                        <div class="dropzone-sub">지원 형식: PNG, WebP, SVG, JPG (배경 투명 권장)</div>
+                                    </div>
+                                    <div id="file-info-bar" class="file-info-bar" style="display: none;">
+                                        <span id="file-info-name" class="file-info-name">선택된 파일: none</span>
+                                        <button type="button" class="btn-file-clear" onclick="window.adminStudio.clearFileResource()">삭제</button>
+                                    </div>
+                                </div>
+
+                                <!-- 탭 2: 이미지 URL 직접 입력 -->
+                                <div id="res-pane-url" class="res-tab-pane">
+                                    <input type="url" id="furn-image-url" class="form-input" placeholder="https://example.com/furniture.png" oninput="window.adminStudio.handleUrlInput(this.value)">
+                                    <span class="form-tip">외부 웹 주소 또는 CDN에 호스팅된 이미지 URL을 입력하세요.</span>
+                                </div>
+
+                                <!-- 탭 3: SVG 코드 직접 입력 -->
+                                <div id="res-pane-svg" class="res-tab-pane">
+                                    <textarea id="furn-svg-data" class="form-textarea code-font" rows="4" placeholder="<svg viewBox='0 0 100 100'>...</svg>" oninput="window.adminStudio.handleSvgInput(this.value)"></textarea>
+                                    <span class="form-tip">인라인 SVG 벡터 코드를 붙여넣으세요.</span>
+                                </div>
+                            </div>
+
+                            <!-- 🔍 실시간 2.5D 그리드 핏 시뮬레이터 (Live Preview) -->
+                            <div class="live-preview-box">
+                                <div class="live-preview-header">
+                                    <span class="live-preview-title">🔍 실시간 2.5D 그리드 프리뷰</span>
+                                    <span id="preview-grid-badge" class="preview-grid-badge">1x1 타일</span>
+                                </div>
+                                <div class="live-preview-canvas-wrap">
+                                    <!-- 2.5D 사선 마름모 그리드 캔버스 SVG -->
+                                    <svg id="preview-stage-svg" class="preview-stage-svg" viewBox="0 0 280 200" xmlns="http://www.w3.org/2000/svg">
+                                        <!-- 자바스크립트로 동적 렌더링 -->
+                                    </svg>
+                                </div>
+                                <div class="live-preview-tip">
+                                    💡 점선 마름모는 가구가 실제 미니룸 바닥에서 차지하는 사선 격자 영역입니다.
+                                </div>
+                            </div>
+
+                            <!-- 폼 제출 및 리셋 버튼 -->
+                            <div class="form-actions-row">
+                                <button type="submit" id="btn-submit-form" class="btn-primary-action">
+                                    <span>➕ 가구 카탈로그에 등록</span>
+                                </button>
+                                <button type="button" id="btn-reset-form" class="btn-secondary-action" onclick="window.adminStudio.resetForm()">
+                                    <span>취소 / 리셋</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
+                <!-- 2. 우측: 등록된 가구 카탈로그 마스터 목록 -->
+                <section class="admin-col admin-col-list">
+                    <div class="admin-card list-card">
+                        
+                        <!-- 목록 상단 헤더 & 통계 요약 -->
+                        <div class="list-header-row">
+                            <div class="list-title-group">
+                                <h2 class="admin-card-title">등록된 가구 카탈로그</h2>
+                                <span class="list-count-badge" id="catalog-count-badge">총 0개 등록됨</span>
+                            </div>
+                            <div class="list-quick-search">
+                                <input type="text" id="catalog-search-input" class="search-input" placeholder="🔍 가구명 검색..." oninput="window.adminStudio.handleSearch(this.value)">
+                            </div>
+                        </div>
+
+                        <!-- 카테고리 필터 탭 바 -->
+                        <div class="admin-category-filter">
+                            <button type="button" class="filter-tab active" data-cat="all" onclick="window.adminStudio.setListFilter('all')">전체 (<span id="cat-count-all">0</span>)</button>
+                            <button type="button" class="filter-tab" data-cat="bed" onclick="window.adminStudio.setListFilter('bed')">침대 (<span id="cat-count-bed">0</span>)</button>
+                            <button type="button" class="filter-tab" data-cat="desk-chair" onclick="window.adminStudio.setListFilter('desk-chair')">데스크/체어 (<span id="cat-count-desk">0</span>)</button>
+                            <button type="button" class="filter-tab" data-cat="sofa-rug" onclick="window.adminStudio.setListFilter('sofa-rug')">소파/러그 (<span id="cat-count-sofa">0</span>)</button>
+                            <button type="button" class="filter-tab" data-cat="decor-plant" onclick="window.adminStudio.setListFilter('decor-plant')">소품/플랜트 (<span id="cat-count-decor">0</span>)</button>
+                            <button type="button" class="filter-tab" data-cat="background" onclick="window.adminStudio.setListFilter('background')">배경 (<span id="cat-count-bg">0</span>)</button>
+                            <button type="button" class="filter-tab" data-cat="special" onclick="window.adminStudio.setListFilter('special')">스페셜 (<span id="cat-count-special">0</span>)</button>
+                        </div>
+
+                        <!-- 가구 목록 카드 그리드 -->
+                        <div id="admin-catalog-grid" class="admin-catalog-grid">
+                            <!-- 자바스크립트로 동적 렌더링 -->
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- 📜 Supabase DB 테이블 생성 SQL 안내 모달 -->
+    <div id="admin-sql-modal" class="admin-modal-overlay">
+        <div class="admin-modal-card">
+            <div class="admin-modal-header">
+                <h3 class="admin-modal-title">📜 Supabase DB 테이블 생성 SQL 가이드</h3>
+                <button type="button" class="admin-modal-close" onclick="window.adminStudio.closeSqlModal()">✕</button>
+            </div>
+            <div class="admin-modal-desc">
+                Supabase SQL Editor에 아래 쿼리를 실행하시면 <code>furniture_catalog</code> 테이블 및 권한 정책이 자동으로 생성됩니다.
+            </div>
+            <div class="code-box-wrap">
+                <pre id="admin-sql-code" class="code-box-content"><code>-- 1. 가구 카탈로그 마스터 테이블 생성
+CREATE TABLE IF NOT EXISTS furniture_catalog (
+    id VARCHAR(100) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    category VARCHAR(50) NOT NULL DEFAULT 'bed',
+    base_w INT NOT NULL DEFAULT 1,
+    base_h INT NOT NULL DEFAULT 1,
+    price INT NOT NULL DEFAULT 0,
+    description TEXT,
+    image_url TEXT,
+    svg_data TEXT,
+    is_special BOOLEAN DEFAULT FALSE,
+    condition_type VARCHAR(50),
+    condition_value BIGINT DEFAULT 0,
+    condition_desc TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. RLS 활성화 및 공용 접근 정책 (조회/생성/수정/삭제)
+ALTER TABLE furniture_catalog ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Read Furniture Catalog" ON furniture_catalog FOR SELECT USING (true);
+CREATE POLICY "Public Insert Furniture Catalog" ON furniture_catalog FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Update Furniture Catalog" ON furniture_catalog FOR UPDATE USING (true);
+CREATE POLICY "Public Delete Furniture Catalog" ON furniture_catalog FOR DELETE USING (true);
+
+-- 3. 실시간 동기화 복제 활성화 (선택)
+ALTER PUBLICATION supabase_realtime ADD TABLE furniture_catalog;</code></pre>
+            </div>
+            <div class="admin-modal-actions">
+                <button type="button" class="btn-copy-sql" onclick="window.adminStudio.copySqlCode()">📋 SQL 복사하기</button>
+                <button type="button" class="btn-close-sql" onclick="window.adminStudio.closeSqlModal()">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🔔 관리자 플로팅 토스트 알림 -->
+    <div id="admin-toast" class="admin-toast"></div>
+
+    <!-- 🚀 관리자 스크립트 로드 -->
+    <script type="module" src="./js/admin.js"></script>
+</body>
+</html>

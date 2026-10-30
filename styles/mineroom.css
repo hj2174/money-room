@@ -1,0 +1,1724 @@
+/* ==========================================================================
+   styles/mineroom.css
+   머니룸(MoneyRoom) 3번째 탭 - 모던 우드 & 미니멀 감성 2.5D 아이소메트릭 미니룸 스타일시트
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 기본 레이아웃 & 미니룸 상단 헤더 (모던 웜 & 우드 톤)
+   -------------------------------------------------------------------------- */
+.mineroom-container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding-bottom: 24px;
+}
+
+/* 스테이지 내부 상단 헤더 카드 (Flex 상단 요소로 분리) */
+.mineroom-header-card {
+    position: relative;
+    width: 100%;
+    z-index: 25;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    border-radius: 16px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+.mineroom-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.mineroom-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mineroom-title {
+    font-size: 17px;
+    font-weight: 800;
+    color: #2c2520;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: -0.3px;
+}
+
+.mineroom-badge-bgm {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #5c4d43;
+    background: #f4efe9;
+    padding: 3px 8px;
+    border-radius: 12px;
+    border: 1px solid #eae2d8;
+}
+
+/* 헤더 우측 컨트롤 버튼 그룹 */
+.mineroom-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #7c6858 0%, #5d4a3b 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(93, 74, 59, 0.22);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-mode-toggle:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(93, 74, 59, 0.3);
+}
+
+/* 방 꾸미기 모드 시: '💾 배치 저장' 버튼으로 강조 변환 */
+.btn-mode-toggle.btn-mode-save {
+    background: linear-gradient(135deg, #2d5a44 0%, #1c3c2d 100%);
+    box-shadow: 0 4px 14px rgba(28, 60, 45, 0.35);
+    border: 1px solid #3c775a;
+}
+
+.btn-mode-toggle.btn-mode-save:hover {
+    background: linear-gradient(135deg, #244b38 0%, #152e22 100%);
+    box-shadow: 0 6px 18px rgba(28, 60, 45, 0.45);
+}
+
+/* 포인트 & 자산 연동 통계 바 */
+.mineroom-stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fbf9f6;
+    border-radius: 14px;
+    padding: 10px 14px;
+    border: 1px solid #ebe6df;
+}
+
+.mineroom-stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stat-item-label {
+    font-size: 11px;
+    color: #7d7268;
+    font-weight: 600;
+}
+
+.stat-item-value {
+    font-size: 15px;
+    font-weight: 800;
+    color: #2c2520;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.stat-item-value.point-highlight {
+    color: #b8860b;
+}
+
+.db-sync-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.db-sync-badge.synced {
+    background: #edf5f0;
+    color: #245c38;
+    border: 1px solid #cce5d4;
+}
+
+.db-sync-badge.local {
+    background: #f3efe9;
+    color: #7d7268;
+    border: 1px solid #dfd8cf;
+}
+
+/* --------------------------------------------------------------------------
+   2. 미니룸 뷰포트 (2.5D 아이소메트릭 룸 무대 & 원목 마루 바닥)
+   -------------------------------------------------------------------------- */
+.mineroom-viewport-card {
+    background: #ffffff;
+    border-radius: 22px;
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 1px solid #e8e5df;
+    box-shadow: 0 6px 24px rgba(92, 77, 67, 0.06);
+    position: relative;
+    overflow: hidden;
+}
+
+/* 2.5D 아이소메트릭 3D 미니어처 룸 스테이지 */
+.iso-room-stage {
+    position: relative;
+    width: 100%;
+    min-height: 440px;
+    border-radius: 18px;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 30%, #faf8f5 0%, #ebe6dc 100%);
+    border: 1px solid #dfdad0;
+    box-shadow: inset 0 2px 10px rgba(70, 55, 45, 0.05);
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 12px 8px 12px;
+    gap: 10px; /* 헤더 카드와 방 그래픽 영역 사이 여유 있는 세로 간격 */
+    box-sizing: border-box;
+}
+
+/* 🖼️ 방 그래픽(SVG 및 가구 레이어) 전용 캔버스 영역 (Flex 1 확장) */
+.iso-scene-area {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    min-height: 335px;
+    overflow: hidden;
+    touch-action: none;
+    border-radius: 12px;
+}
+
+/* 3D 미니어처 다이오라마 룸 전체 SVG (벽체, 바닥 슬래브, 타일 일체형) */
+.iso-scene-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 5;
+    pointer-events: auto;
+}
+
+/* --------------------------------------------------------------------------
+   3. 아이소메트릭 바닥 타일 보드 (Isometric Floor Board)
+   -------------------------------------------------------------------------- */
+.iso-floor-wrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 5;
+    overflow: visible;
+}
+
+/* 마름모 타일 폴리곤 스타일 (밝은 오크 원목 마루 타일) */
+.iso-tile-poly {
+    transition: fill 0.15s ease, stroke 0.15s ease;
+    cursor: pointer;
+}
+
+.iso-tile-poly.checker-even {
+    fill: #f7f0e6;
+    stroke: #ded3c2;
+    stroke-width: 0.8;
+}
+
+.iso-tile-poly.checker-odd {
+    fill: #eee5d8;
+    stroke: #d5c8b5;
+    stroke-width: 0.8;
+}
+
+/* 편집 모드 시 타일 격자선 선명화 */
+.iso-room-stage.is-editing .iso-tile-poly {
+    stroke: #c4b5a0;
+    stroke-width: 1;
+}
+
+/* 타일 마우스 오버 / 드롭 하이라이트 (모던 세이지 그린) */
+.iso-tile-poly:hover,
+.iso-tile-poly.tile-highlight-valid {
+    fill: #dce8e0 !important;
+    stroke: #2d4a3e !important;
+    stroke-width: 1.5 !important;
+}
+
+.iso-tile-poly.tile-highlight-invalid {
+    fill: #fae1dc !important;
+    stroke: #d9534f !important;
+    stroke-width: 1.5 !important;
+}
+
+/* 초록색 점선 2.5D 그리드 프리뷰 폴리곤 (2x2 / 2x1 / 1x1 공간 전체 피팅 가이드) */
+.iso-footprint-preview {
+    transition: all 0.12s ease-out;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 6px rgba(45, 122, 77, 0.25));
+    animation: footprintDash 1.4s linear infinite;
+}
+
+@keyframes footprintDash {
+    to {
+        stroke-dashoffset: -16;
+    }
+}
+
+.iso-footprint-preview.is-dragging {
+    filter: drop-shadow(0 4px 10px rgba(45, 122, 77, 0.4));
+}
+
+/* --------------------------------------------------------------------------
+   4. 아이소메트릭 가구 배치 레이어 (2.5D Furnitures Layer)
+   -------------------------------------------------------------------------- */
+.iso-furniture-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.iso-furniture-item {
+    position: absolute;
+    pointer-events: auto;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.15s ease, filter 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+.iso-furniture-item svg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: none;
+    transition: transform 0.2s ease;
+}
+
+/* 🖼️ 이미지/SVG 기반 가구 리소스 렌더링 스타일 */
+.iso-furniture-item img,
+.iso-furniture-item .furniture-resource-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    display: block;
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.12));
+}
+
+.iso-furniture-item .furniture-resource-svg {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.iso-furniture-item .furniture-resource-svg svg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.furniture-card-thumb img,
+.furniture-card-thumb .furniture-resource-img {
+    width: 100%;
+    height: 100%;
+    max-height: 80px;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.furniture-card-thumb .furniture-resource-svg {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.furniture-card-thumb .furniture-resource-svg svg {
+    width: 100%;
+    height: 100%;
+    max-height: 80px;
+    object-fit: contain;
+}
+
+/* 리소스 미등록 시 2.5D 미니어처 플레이스홀더 */
+.furniture-resource-placeholder {
+    width: 100%;
+    height: 100%;
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: linear-gradient(135deg, #f0eae1 0%, #e4dacb 100%);
+    border: 1px dashed #c2b5a3;
+    border-radius: 10px;
+    color: #6e5f52;
+    padding: 6px;
+    box-sizing: border-box;
+}
+
+.placeholder-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.placeholder-size {
+    font-size: 10px;
+    font-weight: 800;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 2px 6px;
+    border-radius: 6px;
+    color: #55473a;
+}
+
+/* 🛠️ 상점 하단 관리자 페이지 바로가기 링크 */
+.shop-admin-link-row {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px dashed #e3ddd3;
+    text-align: center;
+}
+
+.shop-admin-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #fbf9f6;
+    color: #6e5948;
+    border: 1px solid #ded6c8;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.shop-admin-link:hover {
+    background: #f3ece0;
+    border-color: #bfae9a;
+    color: #48392d;
+    transform: translateY(-1px);
+}
+
+/* 선택된 가구 강조 프레임 */
+.iso-furniture-item.is-selected {
+    filter: none;
+}
+
+/* 선택된 가구 상단 미니 핀 표시 */
+.iso-furniture-item.is-selected::before {
+    content: '📍';
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    line-height: 1;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
+    animation: pinBounce 0.7s ease-in-out infinite alternate;
+    pointer-events: none;
+    z-index: 2100;
+}
+
+@keyframes pinBounce {
+    from {
+        transform: translateX(-50%) translateY(0);
+    }
+    to {
+        transform: translateX(-50%) translateY(-4px);
+    }
+}
+
+/* 가구 드래그 중 상태 */
+.iso-furniture-item.is-dragging {
+    opacity: 0.7;
+    transform: scale(1.04);
+}
+
+/* 선택 시 플로팅 조작 버블 (회전, 반전, 보관, 닫기) */
+.furniture-action-bubble {
+    position: absolute;
+    bottom: calc(100% + 16px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2b2520;
+    border-radius: 12px;
+    padding: 4px 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+    z-index: 2200;
+    white-space: nowrap;
+    animation: bubbleFadeIn 0.2s ease-out;
+}
+
+@keyframes bubbleFadeIn {
+    from { opacity: 0; transform: translate(-50%, 6px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.btn-action-bubble {
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    transition: background 0.15s ease;
+}
+
+.btn-action-bubble:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.furniture-inner-wrap {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-action-bubble.bubble-rotate {
+    color: #79a88f;
+}
+
+.btn-action-bubble.bubble-flip {
+    color: #70b3e6;
+}
+
+.btn-action-bubble.bubble-remove {
+    color: #e07a5f;
+}
+
+/* --------------------------------------------------------------------------
+   5. 방 편집 컨트롤 바 (둘러보기 vs 방 꾸미기 모드별 UI 분리)
+   -------------------------------------------------------------------------- */
+.room-toolbar {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #fbf9f6;
+    border-radius: 14px;
+    padding: 8px 12px;
+    border: 1px solid #ebe6df;
+    transition: all 0.25s ease;
+}
+
+.room-toolbar.is-editing {
+    background: #f5f8f6;
+    border-color: #cde0d5;
+}
+
+.room-toolbar-status {
+    font-size: 12px;
+    font-weight: 600;
+    color: #7d7268;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.room-toolbar.is-editing .room-toolbar-status {
+    color: #245c38;
+}
+
+.room-toolbar-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.btn-room-action {
+    background: #ffffff;
+    border: 1px solid #dcd6cd;
+    color: #4a3e35;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+}
+
+.btn-room-action:hover {
+    background: #f4efe9;
+    border-color: #beb4a7;
+}
+
+/* 둘러보기 모드 시: 편집 컨트롤 버튼(회전, 반전, 보관, 비우기) 완전 숨김 */
+.room-toolbar:not(.is-editing) .edit-control-btn {
+    display: none !important;
+}
+
+/* 방 꾸미기 모드 시: 편집 컨트롤 버튼 부드러운 노출 애니메이션 */
+.room-toolbar.is-editing .edit-control-btn {
+    display: inline-flex;
+    animation: toolbarBtnIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes toolbarBtnIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* --------------------------------------------------------------------------
+   6. 하단 패널: 보관함(Inventory) 및 목표 해금 현황
+   -------------------------------------------------------------------------- */
+.mineroom-panel-card {
+    background: #ffffff;
+    border-radius: 22px;
+    padding: 18px;
+    border: 1px solid #e8e5df;
+    box-shadow: 0 6px 24px rgba(92, 77, 67, 0.06);
+}
+
+/* 패널 탭 버튼 */
+.panel-tabs {
+    display: flex;
+    background: #f5f2ec;
+    padding: 4px;
+    border-radius: 14px;
+    margin-bottom: 16px;
+    gap: 4px;
+}
+
+.panel-tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 9px 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: #7d7268;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.panel-tab-btn.active {
+    background: #ffffff;
+    color: #2d4a3e;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.panel-tab-content {
+    display: none;
+}
+
+.panel-tab-content.active {
+    display: block;
+    animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 인벤토리 서랍 상단 헤더 */
+.inventory-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.inventory-header-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #2c2520;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.inventory-guide-tip {
+    font-size: 11px;
+    color: #2d4a3e;
+    font-weight: 600;
+    background: #edf5f0;
+    padding: 3px 8px;
+    border-radius: 10px;
+    border: 1px solid #cce5d4;
+}
+
+/* 가구 아이템 카드 그리드 (2열) */
+.furniture-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.furniture-card {
+    background: #ffffff;
+    border: 1px solid #ebe6df;
+    border-radius: 16px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.furniture-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(92, 77, 67, 0.08);
+    border-color: #cec7bc;
+}
+
+/* 인벤토리 카드 드래그 스타일 */
+.inventory-card {
+    cursor: grab;
+    touch-action: none;
+}
+
+.inventory-card:active {
+    cursor: grabbing;
+}
+
+/* 썸네일 박스 */
+.furniture-card-thumb {
+    width: 100%;
+    height: 96px;
+    background: #faf8f5;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    padding: 6px;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.furniture-card-thumb svg {
+    max-width: 100%;
+    max-height: 100%;
+    filter: none;
+}
+
+.card-size-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid #dfdad2;
+    font-size: 10px;
+    font-weight: 700;
+    color: #5c4d43;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.card-special-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #2d4a3e;
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+}
+
+/* 카드 정보 */
+.furniture-card-info {
+    margin-bottom: 8px;
+}
+
+.card-item-name {
+    font-size: 13px;
+    font-weight: 800;
+    color: #2c2520;
+    margin: 0 0 2px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-item-desc {
+    font-size: 11px;
+    color: #7d7268;
+    margin: 0;
+    line-height: 1.4;
+    height: 30px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+/* 카드 하단 액션 버튼 */
+.card-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+
+.card-price {
+    font-size: 13px;
+    font-weight: 800;
+    color: #b8860b;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.btn-card-action {
+    background: #f4efe9;
+    border: 1px solid #dfd8cf;
+    color: #4a3e35;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-card-action:hover {
+    background: #eae3d8;
+}
+
+.btn-card-buy {
+    background: linear-gradient(135deg, #2d4a3e 0%, #1e362c 100%);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 2px 6px rgba(45, 74, 62, 0.25);
+}
+
+.btn-card-buy:hover {
+    background: linear-gradient(135deg, #243c32 0%, #172b23 100%);
+}
+
+.btn-card-place {
+    background: #edf5f0;
+    color: #245c38;
+    border-color: #cce5d4;
+    font-weight: 800;
+}
+
+.btn-card-place:hover {
+    background: #e2ede6;
+}
+
+/* 목표 달성 연동 탭 리스트 */
+.goal-reward-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.goal-reward-card {
+    background: #fbf9f6;
+    border: 1px solid #ebe6df;
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.goal-reward-icon {
+    width: 44px;
+    height: 44px;
+    background: #ffffff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    flex-shrink: 0;
+    border: 1px solid #e8e5df;
+}
+
+.goal-reward-info {
+    flex: 1;
+}
+
+.goal-reward-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #2c2520;
+    margin-bottom: 2px;
+}
+
+.goal-reward-condition {
+    font-size: 11px;
+    color: #7d7268;
+}
+
+.goal-reward-status {
+    flex-shrink: 0;
+}
+
+.badge-reward-unlocked {
+    background: #edf5f0;
+    color: #245c38;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid #cce5d4;
+}
+
+.badge-reward-locked {
+    background: #f4efe9;
+    color: #a0958a;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 8px;
+}
+
+/* 빈 목록 상태 */
+.panel-empty-state {
+    text-align: center;
+    padding: 36px 16px;
+    color: #7d7268;
+}
+
+.panel-empty-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+
+.panel-empty-text {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.panel-empty-full {
+    grid-column: 1 / -1;
+}
+
+/* --------------------------------------------------------------------------
+   7. 인라인 가구 상점 (Shop Tab) & 스페셜 해금 UI
+   -------------------------------------------------------------------------- */
+.shop-filter-wrap {
+    margin-bottom: 12px;
+}
+
+.shop-filter-bar {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: none;
+}
+
+.shop-filter-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.shop-filter-chip {
+    background: #fbf9f6;
+    border: 1px solid #ebe6df;
+    color: #7d7268;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+
+.shop-filter-chip:hover {
+    background: #f4efe9;
+    border-color: #d8d0c4;
+}
+
+.shop-filter-chip.active {
+    background: #2d4a3e;
+    color: #ffffff;
+    border-color: #2d4a3e;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(45, 74, 62, 0.2);
+}
+
+/* ⭐ 스페셜 해금 목표 달성 요약 박스 */
+.shop-special-summary {
+    display: none;
+    background: linear-gradient(135deg, #f7faf8 0%, #edf5f0 100%);
+    border: 1px solid #cce5d4;
+    border-radius: 16px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+}
+
+.shop-special-summary.active {
+    display: block;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.special-summary-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #1e4530;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.special-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.special-summary-card {
+    background: #ffffff;
+    border: 1px solid #d8ebd0;
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.special-summary-card-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #5d7568;
+}
+
+.special-summary-card-val {
+    font-size: 15px;
+    font-weight: 800;
+    color: #1c452e;
+}
+
+.special-summary-tip {
+    font-size: 11px;
+    color: #4a6858;
+    margin-top: 8px;
+    line-height: 1.4;
+}
+
+/* 해금 조건 안내 박스 */
+.shop-condition-box {
+    background: #fbf9f6;
+    border: 1px solid #ebe6df;
+    border-radius: 10px;
+    padding: 7px 9px;
+    margin-top: 6px;
+    margin-bottom: 6px;
+    font-size: 11px;
+}
+
+.shop-condition-box.unlocked {
+    background: #edf5f0;
+    border-color: #cce5d4;
+}
+
+.condition-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.condition-title {
+    font-weight: 700;
+    color: #b8860b;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.shop-condition-box.unlocked .condition-title {
+    color: #245c38;
+}
+
+.condition-badge-status {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.condition-badge-status.badge-unlocked {
+    background: #245c38;
+    color: #ffffff;
+}
+
+.condition-badge-status.badge-locked {
+    background: #b8860b;
+    color: #ffffff;
+}
+
+.condition-desc-text {
+    color: #7d7268;
+    line-height: 1.3;
+    font-size: 10.5px;
+}
+
+.condition-status-detail {
+    font-size: 10.5px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.condition-status-detail.unlocked {
+    color: #245c38;
+}
+
+.condition-status-detail.locked {
+    color: #b8860b;
+}
+
+/* --------------------------------------------------------------------------
+   7-2. 보관함 필터 바 및 통합 상점 배경 서브필터 & 배경 장착 UI
+   -------------------------------------------------------------------------- */
+.inventory-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.inv-filter-chip {
+    background: #fbf9f6;
+    border: 1px solid #ebe5dc;
+    color: #7d7268;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.inv-filter-chip:hover {
+    background: #f4efe9;
+    border-color: #d8d0c4;
+}
+
+.inv-filter-chip.active {
+    background: #2d4a3e;
+    color: #ffffff;
+    border-color: #2d4a3e;
+    font-weight: 700;
+    box-shadow: 0 2px 5px rgba(45, 74, 62, 0.2);
+}
+
+/* 상점 배경 서브 카테고리 필터 바 */
+.shop-subfilter-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #ebe5dc;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.shop-subfilter-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.shop-subfilter-chip {
+    background: #ffffff;
+    border: 1px solid #dfd8cf;
+    color: #6e6459;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+
+.shop-subfilter-chip:hover {
+    background: #f7f3ee;
+    border-color: #cbbfb1;
+}
+
+.shop-subfilter-chip.active {
+    background: #3e5a4d;
+    color: #ffffff;
+    border-color: #3e5a4d;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(62, 90, 77, 0.2);
+}
+
+/* 보관함 내 배경 아이템 장착 상태 뱃지 및 버튼 */
+.card-equipped-tag {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: #2d4a3e;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    z-index: 2;
+}
+
+.btn-card-equip {
+    background: #2d4a3e;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-card-equip:hover {
+    background: #233c32;
+    box-shadow: 0 2px 6px rgba(45, 74, 62, 0.25);
+}
+
+.btn-card-unequip {
+    background: #f0ebe4;
+    color: #6a5d52;
+    border: 1px solid #dcd4c8;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-card-unequip:hover {
+    background: #e5ded5;
+    color: #453b32;
+}
+
+/* --------------------------------------------------------------------------
+   8. 토스트 알림 및 Supabase SQL 안내 모달
+   -------------------------------------------------------------------------- */
+.mineroom-toast {
+    position: fixed;
+    bottom: 74px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #2c2520;
+    color: #ffffff;
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 3000;
+}
+
+.mineroom-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.mineroom-toast.toast-success {
+    background: #2c2520;
+    border-left: 4px solid #245c38;
+}
+
+.mineroom-toast.toast-error {
+    background: #2c2520;
+    border-left: 4px solid #d9534f;
+}
+
+.sql-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(30, 25, 20, 0.6);
+    backdrop-filter: blur(3px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2200;
+    padding: 16px;
+}
+
+.sql-modal-overlay.open {
+    display: flex;
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+/* --------------------------------------------------------------------------
+   7-3. 공간 평형대 확장 티어 UI
+   -------------------------------------------------------------------------- */
+.stat-item-value.tier-badge {
+    background: #eef5f1;
+    color: #245c38;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11.5px;
+    font-weight: 700;
+    border: 1px solid #c9e0d1;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.stat-item-value.tier-badge:hover {
+    background: #e1efe6;
+    border-color: #245c38;
+}
+
+.tier-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.tier-card {
+    background: #fdfcf9;
+    border: 1px solid #e8e2d8;
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: all 0.2s ease;
+}
+
+.tier-card:hover {
+    border-color: #beb4a3;
+    background: #f8f4ee;
+}
+
+.tier-card.is-active {
+    border-color: #2d4a3e;
+    background: #f4f8f5;
+    box-shadow: 0 2px 8px rgba(45, 74, 62, 0.1);
+}
+
+.tier-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tier-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tier-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #3e3228;
+}
+
+.tier-badge-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: #ebe5dc;
+    color: #5c4e40;
+}
+
+.tier-card.is-active .tier-badge-pill {
+    background: #2d4a3e;
+    color: #ffffff;
+}
+
+.tier-card-desc {
+    font-size: 11px;
+    color: #7d7268;
+    line-height: 1.3;
+}
+
+.tier-card-condition {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #a07820;
+    margin-top: 2px;
+}
+
+.tier-card-condition.unlocked {
+    color: #245c38;
+}
+
+.btn-tier-action {
+    background: #2d4a3e;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+
+.btn-tier-action:hover {
+    background: #20382e;
+}
+
+.btn-tier-action.is-current {
+    background: #e2ede6;
+    color: #2d4a3e;
+    cursor: default;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.sql-modal-card {
+    background: #ffffff;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 440px;
+    padding: 22px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    border: 1px solid #e8e5df;
+}
+
+.sql-modal-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #2c2520;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sql-modal-desc {
+    font-size: 12px;
+    color: #7d7268;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.sql-code-box {
+    background: #24201c;
+    color: #f7f5f2;
+    border-radius: 12px;
+    padding: 12px;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    overflow-x: auto;
+    max-height: 160px;
+}
+
+.sql-modal-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.btn-sql-copy {
+    background: #2d4a3e;
+    color: #ffffff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.btn-sql-close {
+    background: #ebe6df;
+    color: #4a3e35;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* ==========================================================================
+   9. 반응형 웹 미디어 쿼리 (CSS Guidelines Rule 6.3 준수)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 1400px (데스크탑 와이드)
+   -------------------------------------------------------------------------- */
+@media (max-width: 1400px) {
+    .mineroom-container {
+        max-width: 480px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 1300px
+   -------------------------------------------------------------------------- */
+@media (max-width: 1300px) {
+    .mineroom-container {
+        max-width: 480px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 1200px
+   -------------------------------------------------------------------------- */
+@media (max-width: 1200px) {
+    .mineroom-container {
+        max-width: 480px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 1100px
+   -------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+    .mineroom-container {
+        max-width: 480px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 960px (모바일 UI / 레이아웃 전환 기준점)
+   -------------------------------------------------------------------------- */
+@media (max-width: 960px) {
+    body {
+        padding: 24px 12px 96px 12px;
+    }
+
+    .mineroom-container {
+        width: 100%;
+        max-width: 480px;
+    }
+
+    .mineroom-header-card {
+        padding: 16px;
+    }
+
+    .mineroom-viewport-card {
+        padding: 12px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 768px (태블릿 및 대형 모바일)
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+    .mineroom-header-card {
+        border-radius: 18px;
+    }
+
+    .mineroom-viewport-card {
+        border-radius: 18px;
+    }
+
+    .iso-room-stage {
+        min-height: 430px;
+        height: auto;
+    }
+
+    .furniture-grid {
+        gap: 10px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 640px
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+    .stat-item-value {
+        font-size: 14px;
+    }
+
+    .btn-mode-toggle {
+        font-size: 12px;
+        padding: 7px 13px;
+    }
+
+    .furniture-card-thumb {
+        height: 88px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 480px (일반 스마트폰)
+   -------------------------------------------------------------------------- */
+@media (max-width: 480px) {
+    body {
+        padding: 16px 8px 96px 8px;
+    }
+
+    .mineroom-stat-row {
+        padding: 8px 10px;
+    }
+
+    .iso-room-stage {
+        min-height: 430px;
+        height: auto;
+    }
+
+    .room-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+
+    .room-toolbar-buttons {
+        justify-content: flex-end;
+    }
+
+    .furniture-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .furniture-card {
+        padding: 10px;
+    }
+
+    .furniture-card-thumb {
+        height: 80px;
+    }
+
+    .card-item-name {
+        font-size: 12px;
+    }
+
+    .card-item-desc {
+        font-size: 10px;
+        height: 28px;
+    }
+
+    .btn-card-action {
+        font-size: 11px;
+        padding: 5px 8px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 360px (작은 모바일 화면)
+   -------------------------------------------------------------------------- */
+@media (max-width: 360px) {
+    .mineroom-title {
+        font-size: 15px;
+    }
+
+    .stat-item-value {
+        font-size: 13px;
+    }
+
+    .panel-tab-btn {
+        font-size: 12px;
+        padding: 7px 0;
+    }
+
+    .furniture-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   반응형 구간: ~ 320px (초소형 화면 대응)
+   -------------------------------------------------------------------------- */
+@media (max-width: 320px) {
+    .mineroom-header-card {
+        padding: 12px 10px;
+    }
+
+    .mineroom-stat-row {
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .iso-room-stage {
+        min-height: 430px;
+        height: auto;
+    }
+}

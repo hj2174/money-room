@@ -1,0 +1,1218 @@
+/* ==========================================================================
+   styles/admin.css
+   머니룸(MoneyRoom) 독립 관리자 센터 - 가구 카탈로그 & 리소스 관리 스타일시트
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 기본 레이아웃 & 테마 변수
+   -------------------------------------------------------------------------- */
+:root {
+    --admin-bg: #f5f2eb;
+    --admin-card-bg: #ffffff;
+    --admin-primary: #5c4a3b;
+    --admin-primary-hover: #48392d;
+    --admin-accent-gold: #c29543;
+    --admin-accent-green: #2e7d56;
+    --admin-accent-danger: #d9534f;
+    --admin-text-main: #2b241e;
+    --admin-text-sub: #786c62;
+    --admin-border: #e6dfd5;
+    --admin-border-focus: #b89c82;
+    --admin-radius: 16px;
+    --admin-shadow: 0 4px 20px rgba(70, 55, 42, 0.06);
+}
+
+body {
+    background-color: var(--admin-bg);
+    color: var(--admin-text-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+.admin-wrapper {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --------------------------------------------------------------------------
+   2. 상단 글로벌 네비게이션 헤더
+   -------------------------------------------------------------------------- */
+.admin-header {
+    background: #ffffff;
+    border-bottom: 1px solid var(--admin-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.admin-header-inner {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.admin-brand-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.admin-logo-badge {
+    background: linear-gradient(135deg, #5c4a3b 0%, #3e3126 100%);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 6px 12px;
+    border-radius: 10px;
+    letter-spacing: -0.2px;
+    box-shadow: 0 2px 8px rgba(62, 49, 38, 0.2);
+}
+
+.admin-title-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.admin-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--admin-text-main);
+    margin: 0;
+    letter-spacing: -0.4px;
+}
+
+.admin-subtitle {
+    font-size: 12px;
+    color: var(--admin-text-sub);
+    font-weight: 500;
+}
+
+.admin-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-admin-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    color: var(--admin-primary);
+    border: 1px solid var(--admin-border);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.btn-admin-nav:hover {
+    background: #fdfaf6;
+    border-color: var(--admin-border-focus);
+    transform: translateY(-1px);
+}
+
+.btn-admin-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ffffff;
+    color: var(--admin-text-main);
+    border: 1px solid var(--admin-border);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-admin-action:hover {
+    background: #fdfaf6;
+    border-color: var(--admin-border-focus);
+    transform: translateY(-1px);
+}
+
+.btn-admin-action.btn-seed-samples {
+    background: linear-gradient(135deg, #eef7f2 0%, #ddede3 100%);
+    color: #1e5c3c;
+    border-color: #bcdbc8;
+}
+
+.btn-admin-action.btn-seed-samples:hover {
+    background: linear-gradient(135deg, #e3f2e9 0%, #cce5d6 100%);
+}
+
+/* --------------------------------------------------------------------------
+   3. 메인 콘텐츠 및 2단 그리드 레이아웃
+   -------------------------------------------------------------------------- */
+.admin-main {
+    flex: 1;
+    max-width: 1440px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.admin-grid-layout {
+    display: grid;
+    grid-template-columns: 460px 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+.admin-card {
+    background: var(--admin-card-bg);
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius);
+    box-shadow: var(--admin-shadow);
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.form-sticky-card {
+    position: sticky;
+    top: 86px;
+    max-height: calc(100vh - 110px);
+    overflow-y: auto;
+}
+
+.admin-card-header {
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--admin-border);
+    padding-bottom: 16px;
+}
+
+.form-mode-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: #edf6f0;
+    color: #245c38;
+    margin-bottom: 6px;
+}
+
+.form-mode-badge.is-edit {
+    background: #fff4e5;
+    color: #b35900;
+}
+
+.admin-card-title {
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--admin-text-main);
+    margin: 0 0 6px 0;
+    letter-spacing: -0.3px;
+}
+
+.admin-card-desc {
+    font-size: 13px;
+    color: var(--admin-text-sub);
+    margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   4. 폼 컨트롤 및 입력 필드
+   -------------------------------------------------------------------------- */
+.admin-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-row {
+    display: flex;
+    gap: 12px;
+}
+
+.form-group-half {
+    flex: 1;
+}
+
+.form-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--admin-text-main);
+}
+
+.form-label .required {
+    color: var(--admin-accent-danger);
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+    width: 100%;
+    background: #fdfbf8;
+    border: 1px solid var(--admin-border);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13px;
+    color: var(--admin-text-main);
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+    outline: none;
+    background: #ffffff;
+    border-color: var(--admin-primary);
+    box-shadow: 0 0 0 3px rgba(92, 74, 59, 0.12);
+}
+
+.form-textarea {
+    resize: vertical;
+}
+
+.form-textarea.code-font {
+    font-family: "Fira Code", Consolas, Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.form-tip {
+    font-size: 11px;
+    color: var(--admin-text-sub);
+    margin-top: 4px;
+}
+
+.input-with-btn {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-input-sub {
+    background: #f0ece3;
+    color: var(--admin-primary);
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+}
+
+.btn-input-sub:hover {
+    background: #e4ddcf;
+}
+
+.input-unit-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-unit {
+    position: absolute;
+    right: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--admin-text-sub);
+    pointer-events: none;
+}
+
+/* 그리드 점유 프리셋 칩 */
+.grid-preset-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.preset-chip {
+    background: #f4efe7;
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--admin-text-main);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.preset-chip:hover {
+    background: #ebe4d8;
+}
+
+.preset-chip.active {
+    background: var(--admin-primary);
+    color: #ffffff;
+    border-color: var(--admin-primary);
+}
+
+.grid-inputs-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #faf7f2;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px dashed var(--admin-border);
+}
+
+.grid-input-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.grid-input-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--admin-text-sub);
+    white-space: nowrap;
+}
+
+.grid-input-item .form-input {
+    width: 60px;
+    text-align: center;
+    font-weight: 700;
+    padding: 6px;
+}
+
+.grid-input-unit {
+    font-size: 12px;
+    color: var(--admin-text-sub);
+}
+
+.grid-multiply-sign {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--admin-text-sub);
+}
+
+/* 스페셜 아코디언 카드 */
+.special-accordion-card {
+    background: #fcfbf9;
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.custom-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.custom-checkbox-label input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--admin-accent-gold);
+    cursor: pointer;
+}
+
+.checkbox-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--admin-text-main);
+}
+
+.special-options-panel {
+    border-top: 1px dashed var(--admin-border);
+    padding-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* --------------------------------------------------------------------------
+   5. 리소스 탭 & 파일 드롭존
+   -------------------------------------------------------------------------- */
+.resource-section {
+    background: #faf8f5;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid var(--admin-border);
+}
+
+.resource-tab-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.res-tab-btn {
+    flex: 1;
+    background: #ece6dc;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--admin-text-main);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.res-tab-btn:hover {
+    background: #ded5c7;
+}
+
+.res-tab-btn.active {
+    background: var(--admin-primary);
+    color: #ffffff;
+}
+
+.res-tab-pane {
+    display: none;
+}
+
+.res-tab-pane.active {
+    display: block;
+}
+
+.file-dropzone {
+    background: #ffffff;
+    border: 2px dashed #c9bfb1;
+    border-radius: 12px;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.file-dropzone:hover,
+.file-dropzone.dragover {
+    border-color: var(--admin-primary);
+    background: #faf6f0;
+    transform: scale(1.01);
+}
+
+.dropzone-icon {
+    font-size: 28px;
+    margin-bottom: 6px;
+}
+
+.dropzone-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--admin-text-main);
+    margin-bottom: 4px;
+}
+
+.dropzone-sub {
+    font-size: 11px;
+    color: var(--admin-text-sub);
+}
+
+.file-info-bar {
+    margin-top: 8px;
+    background: #eef6f0;
+    border: 1px solid #c9e5d3;
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #1e5c3c;
+    font-weight: 600;
+}
+
+.btn-file-clear {
+    background: transparent;
+    border: none;
+    color: var(--admin-accent-danger);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+/* --------------------------------------------------------------------------
+   6. 실시간 2.5D 그리드 시뮬레이터 (Live Preview)
+   -------------------------------------------------------------------------- */
+.live-preview-box {
+    background: #ffffff;
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.live-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.live-preview-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--admin-text-main);
+}
+
+.preview-grid-badge {
+    font-size: 11px;
+    font-weight: 800;
+    background: #f0ece3;
+    padding: 3px 8px;
+    border-radius: 6px;
+    color: var(--admin-primary);
+}
+
+.live-preview-canvas-wrap {
+    width: 100%;
+    height: 170px;
+    background: radial-gradient(circle at 50% 50%, #faf8f5 0%, #ebe5d8 100%);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #ded6c8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-stage-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.live-preview-tip {
+    font-size: 11px;
+    color: var(--admin-text-sub);
+    line-height: 1.4;
+}
+
+/* 폼 제출 버튼 */
+.form-actions-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.btn-primary-action {
+    flex: 2;
+    background: linear-gradient(135deg, #5c4a3b 0%, #463629 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(70, 54, 41, 0.25);
+    transition: all 0.2s ease;
+}
+
+.btn-primary-action:hover {
+    background: linear-gradient(135deg, #4d3d2f 0%, #3a2b1f 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(70, 54, 41, 0.35);
+}
+
+.btn-secondary-action {
+    flex: 1;
+    background: #f4efe7;
+    color: var(--admin-text-sub);
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.btn-secondary-action:hover {
+    background: #e9e2d6;
+    color: var(--admin-text-main);
+}
+
+/* --------------------------------------------------------------------------
+   7. 우측 가구 카탈로그 마스터 목록
+   -------------------------------------------------------------------------- */
+.list-card {
+    min-height: 600px;
+}
+
+.list-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.list-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.list-count-badge {
+    background: #eee8de;
+    color: var(--admin-primary);
+    font-size: 12px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 12px;
+}
+
+.search-input {
+    width: 220px;
+    background: #fdfbf8;
+    border: 1px solid var(--admin-border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.search-input:focus {
+    outline: none;
+    background: #ffffff;
+    border-color: var(--admin-primary);
+    box-shadow: 0 0 0 3px rgba(92, 74, 59, 0.12);
+}
+
+/* 카테고리 필터 탭 */
+.admin-category-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--admin-border);
+    padding-bottom: 14px;
+}
+
+.filter-tab {
+    background: #fbf9f6;
+    border: 1px solid var(--admin-border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--admin-text-sub);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.filter-tab:hover {
+    background: #f0ece3;
+    color: var(--admin-text-main);
+}
+
+.filter-tab.active {
+    background: var(--admin-primary);
+    color: #ffffff;
+    border-color: var(--admin-primary);
+}
+
+/* 가구 카드 그리드 */
+.admin-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.admin-item-card {
+    background: #ffffff;
+    border: 1px solid var(--admin-border);
+    border-radius: 14px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: all 0.2s ease;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.admin-item-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(70, 55, 42, 0.08);
+    border-color: #d1c5b4;
+}
+
+.admin-thumb-wrap {
+    width: 100%;
+    height: 120px;
+    background: radial-gradient(circle at 50% 50%, #faf8f5 0%, #ede6d8 100%);
+    border-radius: 10px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.admin-thumb-wrap img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+}
+
+.admin-thumb-wrap svg {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.card-size-tag {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(43, 36, 30, 0.75);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+}
+
+.card-special-tag {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: linear-gradient(135deg, #d4af37 0%, #aa861c 100%);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.admin-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.admin-card-name {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--admin-text-main);
+    margin: 0;
+    line-height: 1.3;
+}
+
+.admin-card-category {
+    font-size: 11px;
+    color: var(--admin-text-sub);
+    font-weight: 600;
+}
+
+.admin-card-desc-text {
+    font-size: 11px;
+    color: #7d7268;
+    line-height: 1.4;
+    height: 32px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.admin-card-price-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 8px;
+    border-top: 1px dashed var(--admin-border);
+}
+
+.admin-price-badge {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--admin-accent-gold);
+}
+
+.admin-card-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-card-edit {
+    background: #f0ece3;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--admin-primary);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.btn-card-edit:hover {
+    background: #e3dccf;
+}
+
+.btn-card-del {
+    background: #fdf0ee;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--admin-accent-danger);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.btn-card-del:hover {
+    background: #f9d8d5;
+}
+
+/* 빈 상태 화면 */
+.admin-empty-state {
+    grid-column: 1 / -1;
+    padding: 60px 20px;
+    text-align: center;
+    background: #fcfbf9;
+    border: 2px dashed var(--admin-border);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.admin-empty-icon {
+    font-size: 40px;
+}
+
+.admin-empty-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--admin-text-main);
+    margin: 0;
+}
+
+.admin-empty-desc {
+    font-size: 13px;
+    color: var(--admin-text-sub);
+    margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   8. SQL 모달 & 플로팅 토스트
+   -------------------------------------------------------------------------- */
+.admin-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s ease;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.admin-modal-overlay.open {
+    opacity: 1;
+    visibility: visible;
+}
+
+.admin-modal-card {
+    background: #ffffff;
+    width: 100%;
+    max-width: 640px;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.admin-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.admin-modal-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--admin-text-main);
+    margin: 0;
+}
+
+.admin-modal-close {
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    color: var(--admin-text-sub);
+    cursor: pointer;
+}
+
+.admin-modal-desc {
+    font-size: 13px;
+    color: var(--admin-text-sub);
+    line-height: 1.4;
+}
+
+.code-box-wrap {
+    background: #1e1e1e;
+    border-radius: 10px;
+    padding: 14px;
+    overflow-x: auto;
+}
+
+.code-box-content {
+    margin: 0;
+    color: #d4d4d4;
+    font-family: "Fira Code", Consolas, Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.admin-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.btn-copy-sql {
+    background: var(--admin-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.btn-copy-sql:hover {
+    background: var(--admin-primary-hover);
+}
+
+.btn-close-sql {
+    background: #f0ece3;
+    color: var(--admin-text-sub);
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* 관리자 플로팅 토스트 알림 */
+.admin-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #2b2520;
+    color: #ffffff;
+    padding: 12px 22px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    z-index: 10000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.admin-toast.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.admin-toast.toast-success {
+    background: #235438;
+}
+
+.admin-toast.toast-error {
+    background: #8c2e28;
+}
+
+/* --------------------------------------------------------------------------
+   9. 반응형 웹 스타일 가이드라인 (Breakpoints)
+   -------------------------------------------------------------------------- */
+
+/* 반응형 구간: ~ 1400px */
+@media (max-width: 1400px) {
+    .admin-grid-layout {
+        grid-template-columns: 420px 1fr;
+        gap: 20px;
+    }
+}
+
+/* 반응형 구간: ~ 1300px */
+@media (max-width: 1300px) {
+    .admin-grid-layout {
+        grid-template-columns: 390px 1fr;
+    }
+}
+
+/* 반응형 구간: ~ 1200px */
+@media (max-width: 1200px) {
+    .admin-catalog-grid {
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    }
+}
+
+/* 반응형 구간: ~ 1100px */
+@media (max-width: 1100px) {
+    .admin-header-inner {
+        padding: 12px 18px;
+    }
+    .admin-main {
+        padding: 18px;
+    }
+}
+
+/* 반응형 구간: ~ 960px (모바일/태블릿 1단 레이아웃 전환 기준점) */
+@media (max-width: 960px) {
+    .admin-grid-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .form-sticky-card {
+        position: static;
+        max-height: none;
+    }
+
+    .admin-header-inner {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .admin-header-actions {
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+}
+
+/* 반응형 구간: ~ 768px */
+@media (max-width: 768px) {
+    .list-header-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .search-input {
+        width: 100%;
+    }
+
+    .admin-catalog-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+}
+
+/* 반응형 구간: ~ 640px */
+@media (max-width: 640px) {
+    .form-row {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .grid-preset-chips {
+        gap: 4px;
+    }
+
+    .preset-chip {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+}
+
+/* 반응형 구간: ~ 480px */
+@media (max-width: 480px) {
+    .admin-main {
+        padding: 12px;
+    }
+
+    .admin-card {
+        padding: 16px;
+    }
+
+    .admin-catalog-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .btn-admin-action,
+    .btn-admin-nav {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+}
+
+/* 반응형 구간: ~ 360px */
+@media (max-width: 360px) {
+    .admin-title {
+        font-size: 16px;
+    }
+
+    .grid-inputs-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* 반응형 구간: ~ 320px */
+@media (max-width: 320px) {
+    .admin-card-title {
+        font-size: 17px;
+    }
+
+    .form-actions-row {
+        flex-direction: column;
+    }
+}

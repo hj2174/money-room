@@ -17,7 +17,7 @@ const NAV_ITEMS = [
   },
   {
     id: 'room',
-    path: 'room.html',
+    path: 'mineroom.html',
     label: '미니룸',
     icon: `<svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>`
   }
@@ -29,7 +29,7 @@ export function getActiveNavId() {
   const filename = pathname.substring(pathname.lastIndexOf('/') + 1) || 'index.html'
 
   if (filename.includes('history')) return 'history'
-  if (filename.includes('room')) return 'room'
+  if (filename.includes('room') || filename.includes('mineroom')) return 'room'
   return 'assets' // index.html 또는 기본 메인
 }
 
@@ -38,7 +38,7 @@ export function getHeaderTemplate(activeId = getActiveNavId()) {
   const pageTitles = {
     assets: '자산/목표',
     history: '월별 수지',
-    room: '머니룸'
+    room: '미니룸'
   }
   const currentTitle = pageTitles[activeId] || '머니룸'
 

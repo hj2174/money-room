@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>머니룸 - 모던 아이소메트릭 미니룸</title>
+    <link rel="stylesheet" href="./css/main.css">
+    <link rel="stylesheet" href="./styles/mineroom.css">
+</head>
+<body>
+    
+    <div class="money-room-container mineroom-container">
+        <!-- 📌 상단 공통 헤더 컨테이너 -->
+        <div id="header-container"></div>
+
+        <!-- 🖼️ 2.5D 아이소메트릭 룸 뷰포트 카드 -->
+        <div class="mineroom-viewport-card">
+            <div id="mineroom-stage" class="iso-room-stage">
+                <!-- 🏡 스테이지 내부 상단 오버레이 헤더 (타이틀, 방 꾸미기 토글, 포인트, 평형대 배지) -->
+                <div class="mineroom-header-card">
+                    <div class="mineroom-title-row">
+                        <div class="mineroom-title-group">
+                            <h2 class="mineroom-title">🏡 모던 인테리어 미니룸</h2>
+                        </div>
+                        <div class="mineroom-header-actions">
+                            <button type="button" id="btn-header-mode" class="btn-mode-toggle" onclick="window.mineroom.handleHeaderModeClick()" title="방 꾸미기">
+                                <span>🎨 방 꾸미기</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 자산 및 포인트 연동 통계 바 -->
+                    <div class="mineroom-stat-row">
+                        <div class="mineroom-stat-item">
+                            <span class="stat-item-label">보유 룸 포인트</span>
+                            <span id="stat-room-points" class="stat-item-value point-highlight">1,000P</span>
+                        </div>
+                        <div class="mineroom-stat-item">
+                            <span class="stat-item-label">공간 평형대</span>
+                            <span id="stat-room-tier" class="stat-item-value tier-badge" onclick="window.mineroom.openTierModal()" style="cursor: pointer;" title="평형대 확장">🏠 원룸 (8x8) ▾</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🖼️ 2.5D 아이소메트릭 방 그래픽 전용 캔버스 영역 (헤더 카드와 겹치지 않는 Flex 하단 영역) -->
+                <div id="mineroom-scene-area" class="iso-scene-area">
+                    <!-- 3D 미니어처 룸 다이오라마(벽체, 3D 슬래브 바닥, 마름모 타일) & 가구 레이어 -->
+                    <svg id="iso-scene-svg" class="iso-scene-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                    <div id="placed-layer" class="iso-furniture-layer"></div>
+                </div>
+            </div>
+
+            <!-- 방 조작 및 배치 저장 툴바 -->
+            <div class="room-toolbar">
+                <div id="room-toolbar-status" class="room-toolbar-status"></div>
+                <div class="room-toolbar-buttons">
+                    <button type="button" id="btn-toolbar-flip" class="btn-room-action edit-control-btn" onclick="window.mineroom.flipSelectedItem()" title="선택된 가구 좌우 반전">
+                        ↔️ 반전
+                    </button>
+                    <button type="button" id="btn-toolbar-remove" class="btn-room-action edit-control-btn" onclick="window.mineroom.removeSelectedItemToInventory()" title="선택된 가구 보관함으로">
+                        📦 보관
+                    </button>
+                    <button type="button" class="btn-room-action edit-control-btn" onclick="window.mineroom.clearAllPlacedItems()" title="방 전체 비우기">
+                        🧹 비우기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 📑 하단 가구 보관함(인벤토리) 및 상점 패널 -->
+        <div class="mineroom-panel-card">
+            <div class="panel-tabs">
+                <button type="button" class="panel-tab-btn active" data-tab="inventory" onclick="window.mineroom.setPanelTab('inventory')">
+                    🎒 보관함 (<span id="inventory-count-badge">0</span>)
+                </button>
+                <button type="button" class="panel-tab-btn" data-tab="shop" onclick="window.mineroom.setPanelTab('shop')">
+                    🛍️ 상점
+                </button>
+            </div>
+
+            <!-- 1) 내 가구 및 배경 보관함 (인벤토리 서랍) -->
+            <div id="tab-inventory" class="panel-tab-content active">
+                <div class="inventory-header-row">
+                    <span class="inventory-header-title">보관 중인 아이템</span>
+                    <div class="inventory-filter-bar">
+                        <button type="button" class="inv-filter-chip active" data-invfilter="all" onclick="window.mineroom.setInventoryFilter('all')">전체</button>
+                        <button type="button" class="inv-filter-chip" data-invfilter="furniture" onclick="window.mineroom.setInventoryFilter('furniture')">가구</button>
+                        <button type="button" class="inv-filter-chip" data-invfilter="background" onclick="window.mineroom.setInventoryFilter('background')">배경</button>
+                    </div>
+                </div>
+                <div id="inventory-grid" class="furniture-grid"></div>
+            </div>
+
+            <!-- 2) 상점 (가구 및 배경 통합 상점) -->
+            <div id="tab-shop" class="panel-tab-content">
+                <!-- 상점 카테고리 필터 바 -->
+                <div class="shop-filter-wrap">
+                    <div class="shop-filter-bar">
+                        <button type="button" class="shop-filter-chip active" data-filter="bed" onclick="window.mineroom.setShopFilter('bed')">침대</button>
+                        <button type="button" class="shop-filter-chip" data-filter="desk-chair" onclick="window.mineroom.setShopFilter('desk-chair')">데스크/체어</button>
+                        <button type="button" class="shop-filter-chip" data-filter="sofa-rug" onclick="window.mineroom.setShopFilter('sofa-rug')">소파/러그</button>
+                        <button type="button" class="shop-filter-chip" data-filter="decor-plant" onclick="window.mineroom.setShopFilter('decor-plant')">소품/플랜트</button>
+                        <button type="button" class="shop-filter-chip" data-filter="background" onclick="window.mineroom.setShopFilter('background')">🖼️ 배경</button>
+                        <button type="button" class="shop-filter-chip" data-filter="special" onclick="window.mineroom.setShopFilter('special')">⭐ 스페셜 해금</button>
+                    </div>
+                    <!-- 배경 서브 카테고리 필터 바 (배경 필터 선택 시 노출) -->
+                    <div id="shop-bg-subfilter-bar" class="shop-subfilter-bar" style="display: none;">
+                        <button type="button" class="shop-subfilter-chip active" data-bgsub="all" onclick="window.mineroom.setShopBgSubFilter('all')">전체 배경</button>
+                        <button type="button" class="shop-subfilter-chip" data-bgsub="wallpaper" onclick="window.mineroom.setShopBgSubFilter('wallpaper')">🖼️ 벽지</button>
+                        <button type="button" class="shop-subfilter-chip" data-bgsub="flooring" onclick="window.mineroom.setShopBgSubFilter('flooring')">🪵 바닥재(마루)</button>
+                        <button type="button" class="shop-subfilter-chip" data-bgsub="window" onclick="window.mineroom.setShopBgSubFilter('window')">🪟 창문</button>
+                    </div>
+                </div>
+
+                <!-- 스페셜 해금 요약 박스 (스페셜 필터일 때 표시) -->
+                <div id="shop-special-summary" class="shop-special-summary"></div>
+
+                <!-- 상점 아이템 목록 그리드 -->
+                <div id="shop-furniture-grid" class="furniture-grid"></div>
+
+                <!-- 🛠️ 아이템 카탈로그 관리자 바로가기 -->
+                <div class="shop-admin-link-row">
+                    <a href="admin.html" class="shop-admin-link">
+                        <span>⚙️ 아이템 카탈로그 관리자 페이지 바로가기 ➔</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🧭 하단 공통 네비게이션 컨테이너 -->
+    <div id="navbar-container"></div>
+
+    <!-- 🔔 플로팅 토스트 알림 -->
+    <div id="mineroom-toast" class="mineroom-toast"></div>
+
+    <!-- 🏠 공간 평형대 확장 티어 모달 -->
+    <div id="tier-modal" class="sql-modal-overlay">
+        <div class="sql-modal-card">
+            <div class="sql-modal-header">
+                <h3 class="sql-modal-title">🏠 공간 평형대 확장 티어</h3>
+                <button type="button" class="sql-modal-close" onclick="window.mineroom.closeTierModal()">✕</button>
+            </div>
+            <div class="sql-modal-desc" style="margin-bottom: 14px;">
+                자산 규모나 금융 목표 달성에 따라 더 넓은 평형대의 방으로 확장할 수 있습니다.
+            </div>
+            <div id="tier-list-container" class="tier-list-container"></div>
+            <div class="sql-modal-actions">
+                <button type="button" class="btn-sql-copy" onclick="window.mineroom.closeTierModal()">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🧭 공통 컴포넌트(헤더 & 하단 네비게이션) 로드 -->
+    <script type="module" src="./js/components.js"></script>
+    <!-- 🏠 미니룸 전용 스크립트 로드 -->
+    <script type="module" src="./js/mineroom.js"></script>
+</body>
+</html>
