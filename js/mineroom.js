@@ -26,7 +26,10 @@ export function mapDbToCatalogItem(row) {
     conditionValue: Number(row.condition_value) || 0,
     conditionDesc: row.condition_desc || '',
     imageUrl: row.image_url || '',
-    svgData: row.svg_data || ''
+    svgData: row.svg_data || '',
+    offsetX: Number(row.offset_x) || 0,
+    offsetY: Number(row.offset_y) || 0,
+    isFloorItem: Boolean(row.is_floor_item)
   }
 }
 
@@ -66,7 +69,7 @@ export async function loadFurnitureCatalog() {
 }
 
 // 가구 및 배경 리소스(이미지 / SVG / 플레이스홀더) 렌더링 헬퍼
-export function renderFurnitureResource(item) {
+export function renderFurnitureResource(item, options = {}) {
   if (!item) return ''
   const imgUrl = item.imageUrl || item.image_url
   const svgContent = item.svgData || item.svg_data
@@ -78,23 +81,79 @@ export function renderFurnitureResource(item) {
     return `<div class="furniture-resource-svg">${svgContent}</div>`
   }
 
-  // 리소스 미등록 시 단정하고 귀여운 2.5D 미니어처 플레이스홀더
-  const icon = item.category === 'bed' ? '🛏️'
-             : item.category === 'desk-chair' ? '🪑'
-             : item.category === 'sofa-rug' ? '🛋️'
-             : item.category === 'wallpaper' ? '🖼️'
-             : item.category === 'flooring' ? '🪵'
-             : item.category === 'window' ? '🪟'
-             : item.category === 'special' ? '🏆'
-             : '🪴'
-
   const isBackground = ['wallpaper', 'flooring', 'window'].includes(item.category)
-  const sizeLabel = isBackground ? '배경' : `${item.baseW}x${item.baseH}`
+  if (isBackground) {
+    const icon = item.category === 'wallpaper' ? '🖼️'
+               : item.category === 'flooring' ? '🪵'
+               : '🪟'
+    return `
+      <div class="furniture-resource-placeholder">
+        <span class="placeholder-icon">${icon}</span>
+        <span class="placeholder-size">배경</span>
+      </div>
+    `
+  }
+
+  // image_url과 svg_data가 둘 다 없을 때: 점유 칸 전체를 정확히 덮는 회색 마름모 박스와 가구 이름 글자
+  const spanW = Number(options.spanW ?? item.baseW ?? item.base_w) || 1
+  const spanH = Number(options.spanH ?? item.baseH ?? item.base_h) || 1
+  const isFloorItem = Boolean(options.isFloorItem ?? item.isFloorItem ?? item.is_floor_item)
+  const slabH = (options.slabH !== undefined) ? options.slabH : (isFloorItem ? 0 : 8)
+
+  // 점유 영역 마름모(Footprint Diamond)의 4개 꼭짓점 좌표를 그대로 사용하여 비대칭 규격(2x3, 3x2 등)도 완벽 일치
+  const diamond = options.diamond
+  let W, H, relTopX, relRightX, relRightY, relBottomX, relBottomY, relLeftX, relLeftY
+
+  if (diamond) {
+    W = diamond.width
+    H = diamond.height
+    relTopX = diamond.topX - diamond.leftX
+    relRightX = diamond.rightX - diamond.leftX
+    relRightY = diamond.rightY - diamond.topY
+    relBottomX = diamond.bottomX - diamond.leftX
+    relBottomY = diamond.bottomY - diamond.topY
+    relLeftX = 0
+    relLeftY = diamond.leftY - diamond.topY
+  } else {
+    const halfW = (options.tileW || ISO_GRID.tileW) / 2
+    const halfH = (options.tileH || ISO_GRID.tileH) / 2
+    W = options.width || (spanW + spanH) * halfW
+    H = options.height || (spanW + spanH) * halfH
+    relTopX = spanH * halfW
+    relRightX = W
+    relRightY = spanW * halfH
+    relBottomX = spanW * halfW
+    relBottomY = H
+    relLeftX = 0
+    relLeftY = spanH * halfH
+  }
+
+  const name = String(item.name || '가구')
+  const safeName = name.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+  const nameLen = Math.max(1, name.length)
+  const calcFontSize = Math.max(9, Math.min(13, Math.round((W * 0.8) / nameLen)))
+  const gradId = `grayBoxTopGrad_${item.id || 'default'}`
 
   return `
-    <div class="furniture-resource-placeholder">
-      <span class="placeholder-icon">${icon}</span>
-      <span class="placeholder-size">${sizeLabel}</span>
+    <div class="furniture-resource-placeholder-wrap">
+      <svg viewBox="0 0 ${W} ${H + slabH}" width="100%" height="100%" style="display:block;overflow:visible;">
+        <defs>
+          <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e2e8f0"/>
+            <stop offset="100%" stop-color="#cbd5e1"/>
+          </linearGradient>
+        </defs>
+        ${slabH > 0 ? `
+          <!-- 좌측 입체면 (Left -> Bottom) -->
+          <polygon points="${relLeftX},${relLeftY} ${relBottomX},${relBottomY} ${relBottomX},${relBottomY + slabH} ${relLeftX},${relLeftY + slabH}" fill="#94a3b8" stroke="#64748b" stroke-width="1.2" stroke-linejoin="round"/>
+          <!-- 우측 입체면 (Bottom -> Right) -->
+          <polygon points="${relBottomX},${relBottomY} ${relRightX},${relRightY} ${relRightX},${relRightY + slabH} ${relBottomX},${relBottomY + slabH}" fill="#64748b" stroke="#475569" stroke-width="1.2" stroke-linejoin="round"/>
+        ` : ''}
+        <!-- 상단 마름모 면 (점유 영역 꼭짓점과 동일, 두께 slabH만큼 위로 상승) -->
+        <polygon points="${relTopX},0 ${relRightX},${relRightY} ${relBottomX},${relBottomY} ${relLeftX},${relLeftY}" fill="url(#${gradId})" stroke="#64748b" stroke-width="1.5" stroke-linejoin="round"/>
+        <!-- 가구 이름 글자 (상단 면 중심) -->
+        <text x="${W / 2}" y="${H / 2}" text-anchor="middle" dominant-baseline="central" fill="#1e293b" font-size="${calcFontSize}px" font-weight="700" font-family="-apple-system, BlinkMacSystemFont, 'Pretendard', sans-serif">${safeName}</text>
+      </svg>
     </div>
   `
 }
@@ -159,6 +218,9 @@ const STORAGE_KEY_POINTS = 'moneyroom_mineroom_points'
 const STORAGE_KEY_THEME = 'moneyroom_mineroom_theme'
 const STORAGE_KEY_TIER = 'moneyroom_mineroom_tier'
 
+// 에셋 원본 타일 폭 기준 상수 (px)
+export const ASSET_TILE_W = 64
+
 export function getGridConfig() {
   const tierKey = state.currentTier || 'studio'
   return ROOM_TIERS[tierKey] || ROOM_TIERS.studio
@@ -178,8 +240,14 @@ let state = {
   roomPoints: 1000, // 보유 룸포인트
   achievedGoalsCount: 0, // 달성된 목표 개수
   goals: [], // 전체 목표 목록
-  placedItems: [], // 방에 배치된 가구 [{ id, furniture_id, x, y, rotation }]
-  inventory: ['sofa_cozy', 'table_tea', 'plant_monstera', 'rug_bear', 'bed_pastel'], // 기본 보유 아이템 목록 (가구 & 배경 통합)
+  placedItems: [], // 방에 배치된 가구 [{ id, furniture_id, x, y, rotation, flipH }]
+  inventory: {
+    sofa_cozy: 1,
+    table_tea: 1,
+    plant_monstera: 1,
+    rug_bear: 1,
+    bed_pastel: 1
+  }, // 기본 보유 아이템 수량 목록 { [furniture_id]: quantity }
   selectedItemInstanceId: null, // 현재 방에서 선택된 가구의 id
   activeShopFilter: 'bed', // 상점 카테고리 필터 ('bed' | 'desk-chair' | 'sofa-rug' | 'decor-plant' | 'background' | 'special')
   activeShopBgSubFilter: 'all', // 상점 배경 서브필터 ('all' | 'wallpaper' | 'flooring' | 'window')
@@ -278,19 +346,36 @@ export async function initMineroomData() {
 
   try {
     const savedInv = localStorage.getItem(STORAGE_KEY_INVENTORY)
+    state.inventory = {}
+
     if (savedInv) {
       const parsed = JSON.parse(savedInv)
-      // 존재하는 가구 ID만 필터링하여 안전하게 보존
-      state.inventory = [...new Set(parsed)].filter(id => FURNITURE_CATALOG.some(f => f.id === id))
-      localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
+      if (Array.isArray(parsed)) {
+        // 기존 배열 포맷 마이그레이션: ['id1', 'id2', ...] -> { id1: 1, id2: 1, ... }
+        parsed.forEach(id => {
+          if (FURNITURE_CATALOG.some(f => f.id === id)) {
+            state.inventory[id] = (state.inventory[id] || 0) + 1
+          }
+        })
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        Object.entries(parsed).forEach(([id, qty]) => {
+          const num = Number(qty)
+          if (num > 0 && FURNITURE_CATALOG.some(f => f.id === id)) {
+            state.inventory[id] = num
+          }
+        })
+      }
     } else {
-      // 카탈로그에서 무료(0P) 가구가 있으면 기본 보관함에 지급
-      const defaultFreeItems = FURNITURE_CATALOG.filter(f => f.price === 0 && !f.special).map(f => f.id)
-      state.inventory = defaultFreeItems
-      localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
+      // 카탈로그에서 무료(0P) 가구가 있으면 기본 보관함에 지급 (각 1개)
+      const defaultFreeItems = FURNITURE_CATALOG.filter(f => f.price === 0 && !f.special)
+      defaultFreeItems.forEach(f => {
+        state.inventory[f.id] = 1
+      })
     }
+    localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
   } catch (e) {
     console.warn('인벤토리 로드 실패:', e)
+    state.inventory = {}
   }
 
   let loadedFromCloud = false
@@ -306,13 +391,14 @@ export async function initMineroomData() {
           rotation: Number(row.rotation) || 0,
           flipH: Boolean(row.flip_h || row.fliph || false)
         }))
-        // 중복 가구는 하나만 남김
-        const seenPlaced = new Set()
-        state.placedItems = state.placedItems.filter(item => {
-          if (seenPlaced.has(item.furniture_id)) return false
-          seenPlaced.add(item.furniture_id)
-          return true
+        // 배치된 가구의 수량이 인벤토리보다 크면 인벤토리 수량을 최소 배치 개수 이상으로 보정
+        state.placedItems.forEach(p => {
+          const placedCount = state.placedItems.filter(item => item.furniture_id === p.furniture_id).length
+          if ((state.inventory[p.furniture_id] || 0) < placedCount) {
+            state.inventory[p.furniture_id] = placedCount
+          }
         })
+        localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
         localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
       }
       state.isDbSynced = true
@@ -333,16 +419,16 @@ export async function initMineroomData() {
       const isOldDefault = savedPlaced && (savedPlaced.includes('item_1') && savedPlaced.includes('bed_pastel'))
       if (savedPlaced && !isOldDefault) {
         state.placedItems = JSON.parse(savedPlaced)
-        // 중복 가구는 하나만 남김
-        const seenPlaced = new Set()
-        state.placedItems = state.placedItems.filter(item => {
-          if (seenPlaced.has(item.furniture_id)) return false
-          seenPlaced.add(item.furniture_id)
-          return true
+        // 배치된 가구의 수량이 인벤토리보다 크면 인벤토리 수량을 최소 배치 개수 이상으로 보정
+        state.placedItems.forEach(p => {
+          const placedCount = state.placedItems.filter(item => item.furniture_id === p.furniture_id).length
+          if ((state.inventory[p.furniture_id] || 0) < placedCount) {
+            state.inventory[p.furniture_id] = placedCount
+          }
         })
+        localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
         localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
       } else {
-        // 카탈로그에 존재하는 가구 중 유효한 배치만 남김
         state.placedItems = []
         localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
       }
@@ -443,6 +529,35 @@ export function getFootprintDiamond(col, row, spanW, spanH, stageWidth) {
     width: rightX - leftX,
     height: bottomY - topY,
     points: `${topX},${topY} ${rightX},${rightY} ${bottomX},${bottomY} ${leftX},${leftY}`
+  }
+}
+
+/**
+ * 다중 칸(1x1, 2x1, 2x3 등) 가구 배치 기준점(Anchor Point) 계산
+ * - 가로(X): 점유 영역 마름모의 가로 중심(centerX) 기준 정렬
+ * - 세로(Y): 점유 영역 마름모의 바닥 꼭짓점(bottomY) 기준 하단 정렬
+ * - 회색 박스(플레이스홀더)와 이미지(PNG/SVG) 가구 모두 동일한 공식 적용
+ */
+export function getFurnitureAnchor(diamond, furnW, furnH, options = {}) {
+  const offsetX = options.offsetX || 0
+  const offsetY = options.offsetY || 0
+  return {
+    left: diamond.centerX - furnW / 2 + offsetX,
+    top: diamond.bottomY - furnH + offsetY
+  }
+}
+
+/**
+ * 가구의 회전 상태(rotation)를 반영한 실질적 점유 타일 크기(spanW, spanH) 산출
+ * - 90도 / 270도 회전 시 baseW와 baseH를 교체 (예: 2x3 -> 3x2)
+ */
+export function getItemSpan(item, meta) {
+  const isRotated = Boolean(item && item.rotation && (item.rotation % 180 !== 0))
+  const baseW = Number(meta.baseW ?? meta.base_w) || 1
+  const baseH = Number(meta.baseH ?? meta.base_h) || 1
+  return {
+    spanW: isRotated ? baseH : baseW,
+    spanH: isRotated ? baseW : baseH
   }
 }
 
@@ -696,6 +811,9 @@ export function renderIsoScene() {
 // ==========================================================================
 // 6. 아이소메트릭 가구 배치 렌더링 및 인터랙션 (깊이 정렬 & 드래그)
 // ==========================================================================
+// 가구 이미지 원본 크기 비동기 캐시 (scale 계산용)
+const assetImageSizeCache = new Map()
+
 function renderPlacedItems() {
   const layer = document.getElementById('placed-layer')
   const stage = getSceneElement()
@@ -710,37 +828,88 @@ function renderPlacedItems() {
     const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
     if (!meta) return
 
-    const spanW = meta.baseW
-    const spanH = meta.baseH
+    // 가구 회전(rotation) 반영한 실질 점유 타일(spanW, spanH) 산출
+    const { spanW, spanH } = getItemSpan(item, meta)
 
     // 가구가 차지하는 전체 사선 격자 마름모(Footprint Diamond) 정밀 산출
     const diamond = getFootprintDiamond(item.x, item.y, spanW, spanH, stageWidth)
 
-    const isRug = meta.id.startsWith('rug_') || item.furniture_id.includes('rug')
+    // 바닥 아이템(러그 등) 판별: furniture_catalog의 is_floor_item 컬럼으로 판별
+    const isFloorItem = Boolean(meta.isFloorItem ?? meta.is_floor_item)
 
-    // 2.5D 그리드 1:1 정밀 비례 크기 및 앵커 오프셋 (바닥 마름모에 꽉 찬 볼륨감 부여)
-    let furnW, furnH, anchorY
-    if (isRug) {
-      // 2x2 러그: 바닥 마름모에 완벽 밀착
-      furnW = 104
-      furnH = 64
-      anchorY = 38
-    } else if (spanW >= 2 && spanH >= 2) {
-      // 2x2 대형 가구 (침대): 2x2 바닥 마름모 테두리에 일치
-      furnW = 118
-      furnH = 96
-      anchorY = 58
-    } else if (spanW >= 2 || spanH >= 2) {
-      // 2x1 또는 1x2 중형 가구 (소파, 책상, 선반장)
-      furnW = 96
-      furnH = 78
-      anchorY = 48
-    } else {
-      // 1x1 소형 가구 (화분, 협탁, 체어, 조명, 냉장고, 스페셜)
-      furnW = 72
-      furnH = 72
-      anchorY = 52
+    // 가구 에셋 원본 타일 폭(ASSET_TILE_W) 기준 스케일 및 크기 계산
+    const scale = ISO_GRID.tileW / ASSET_TILE_W
+
+    let assetW = 0
+    let assetH = 0
+
+    const svgStr = meta.svgData || meta.svg_data
+    const imgUrl = meta.imageUrl || meta.image_url
+
+    if (svgStr) {
+      // SVG viewBox 또는 width/height 기반 원본 에셋 규격 파싱
+      const vbMatch = svgStr.match(/viewBox=["']\s*([-\d.]+)\s+([-\d.]+)\s+([\d.]+)\s+([\d.]+)/)
+      if (vbMatch) {
+        assetW = parseFloat(vbMatch[3])
+        assetH = parseFloat(vbMatch[4])
+      } else {
+        const wMatch = svgStr.match(/width=["']([\d.]+)p?x?["']/)
+        const hMatch = svgStr.match(/height=["']([\d.]+)p?x?["']/)
+        if (wMatch && hMatch) {
+          assetW = parseFloat(wMatch[1])
+          assetH = parseFloat(hMatch[1])
+        }
+      }
+    } else if (imgUrl) {
+      if (assetImageSizeCache.has(imgUrl)) {
+        const cached = assetImageSizeCache.get(imgUrl)
+        assetW = cached.width
+        assetH = cached.height
+      } else {
+        const preImg = new Image()
+        preImg.onload = () => {
+          assetImageSizeCache.set(imgUrl, { width: preImg.naturalWidth, height: preImg.naturalHeight })
+          renderPlacedItems()
+        }
+        preImg.src = imgUrl
+      }
     }
+
+    const hasResource = Boolean(svgStr || imgUrl)
+
+    let furnW, furnH, slabH = 0
+    if (hasResource) {
+      // 원본 크기를 알 수 없는 경우 점유 칸(Footprint) 기준 기본 규격 적용
+      if (!assetW || !assetH) {
+        const footprintW = (spanW + spanH) * (ASSET_TILE_W / 2)
+        assetW = footprintW
+        assetH = isFloorItem ? (spanW + spanH) * (ASSET_TILE_W / 4) : footprintW * 0.85
+      }
+      furnW = assetW * scale
+      furnH = assetH * scale
+    } else {
+      // image_url과 svg_data가 둘 다 없을 때: 점유 칸 전체를 정확히 덮는 회색 마름모 박스
+      slabH = isFloorItem ? 0 : 8
+      furnW = diamond.width
+      furnH = diamond.height + slabH
+    }
+
+    // 90도/270도 회전 시 아이소메트릭 축(X축 <-> Y축) 전환에 따라 스프라이트 기본 방향 반전 반영
+    const isRotated90 = (item.rotation === 90 || item.rotation === 270)
+    const shouldFlip = Boolean(item.flipH) !== Boolean(isRotated90)
+
+    // 이미지 위치 보정값 (offset_x, offset_y)을 스케일에 비례하여 적용
+    const rawOffsetX = Number(meta.offsetX ?? meta.offset_x) || 0
+    const rawOffsetY = Number(meta.offsetY ?? meta.offset_y) || 0
+    const scaledOffsetX = rawOffsetX * scale
+    const scaledOffsetY = rawOffsetY * scale
+    const finalOffsetX = shouldFlip ? -scaledOffsetX : scaledOffsetX
+
+    // 점유 영역 마름모의 가로 중심(centerX) 및 바닥 꼭짓점(bottomY) 기준 단일 앵커 좌표 도출
+    const anchor = getFurnitureAnchor(diamond, furnW, furnH, {
+      offsetX: finalOffsetX,
+      offsetY: scaledOffsetY
+    })
 
     const isSelected = state.selectedItemInstanceId === item.id
     if (isSelected) {
@@ -753,21 +922,31 @@ function renderPlacedItems() {
 
     el.style.width = `${furnW}px`
     el.style.height = `${furnH}px`
-    el.style.left = `${diamond.centerX - furnW / 2}px`
-    el.style.top = `${diamond.centerY - anchorY}px`
+    // 점유 영역 마름모의 가로 중심(centerX) 및 바닥 꼭짓점(bottomY) 기준 위치 배치
+    el.style.left = `${anchor.left}px`
+    el.style.top = `${anchor.top}px`
 
     // 깊이 정렬 (앞쪽 가구가 뒤쪽 가구를 가리는 2.5D Z-Index)
-    const zIndex = isRug 
+    const zIndex = isFloorItem 
       ? Math.round((item.y + spanH) * 2 + (item.x + spanW))
       : 100 + Math.round((item.y + spanH) * 20 + (item.x + spanW))
     el.style.zIndex = zIndex
 
-    const flipH = item.flipH ? -1 : 1
+    // 텍스트 미러링 방지: 플레이스홀더 텍스트는 좌우 반전시키지 않음
+    const flipH = (hasResource && shouldFlip) ? -1 : 1
     const transformStyle = flipH === -1 ? 'scaleX(-1)' : ''
 
     el.innerHTML = `
       <div class="furniture-inner-wrap" style="${transformStyle ? `transform: ${transformStyle};` : ''}">
-        ${renderFurnitureResource(meta)}
+        ${renderFurnitureResource(meta, {
+          diamond,
+          spanW,
+          spanH,
+          width: diamond.width,
+          height: diamond.height,
+          isFloorItem,
+          slabH
+        })}
       </div>
     `
 
@@ -775,10 +954,15 @@ function renderPlacedItems() {
       const bubble = document.createElement('div')
       bubble.className = 'furniture-action-bubble'
       bubble.innerHTML = `
+        <button type="button" class="btn-action-bubble bubble-rotate" title="90° 회전">🔄 회전</button>
         <button type="button" class="btn-action-bubble bubble-flip" title="좌우 반전">↔️ 반전</button>
         <button type="button" class="btn-action-bubble bubble-remove" title="보관함으로">📦 보관</button>
         <button type="button" class="btn-action-bubble" title="선택 해제">✕</button>
       `
+      bubble.querySelector('.bubble-rotate').addEventListener('click', (e) => {
+        e.stopPropagation()
+        rotateSelectedItem()
+      })
       bubble.querySelector('.bubble-flip').addEventListener('click', (e) => {
         e.stopPropagation()
         flipSelectedItem()
@@ -811,6 +995,7 @@ function renderPlacedItems() {
 function updateToolbarSelectionStatus() {
   const toolbar = document.querySelector('.room-toolbar')
   const statusEl = document.getElementById('room-toolbar-status')
+  const rotateBtn = document.getElementById('btn-toolbar-rotate')
   const flipBtn = document.getElementById('btn-toolbar-flip')
   const removeBtn = document.getElementById('btn-toolbar-remove')
 
@@ -820,6 +1005,7 @@ function updateToolbarSelectionStatus() {
 
   if (!state.isEditing) {
     if (statusEl) statusEl.innerHTML = ''
+    if (rotateBtn) rotateBtn.disabled = true
     if (flipBtn) flipBtn.disabled = true
     if (removeBtn) removeBtn.disabled = true
     return
@@ -828,16 +1014,19 @@ function updateToolbarSelectionStatus() {
   if (state.selectedItemInstanceId) {
     const item = state.placedItems.find(i => i.id === state.selectedItemInstanceId)
     const meta = item ? FURNITURE_CATALOG.find(f => f.id === item.furniture_id) : null
+    const rotText = item && item.rotation ? ` (${item.rotation}°)` : ''
     const flipText = item && item.flipH ? ' (↔️ 반전됨)' : ''
     if (statusEl) {
-      statusEl.innerHTML = `✨ <strong>[${meta ? meta.name : '가구'}]</strong>${flipText}`
+      statusEl.innerHTML = `✨ <strong>[${meta ? meta.name : '가구'}]</strong>${rotText}${flipText}`
     }
+    if (rotateBtn) rotateBtn.disabled = false
     if (flipBtn) flipBtn.disabled = false
     if (removeBtn) removeBtn.disabled = false
   } else {
     if (statusEl) {
       statusEl.innerHTML = '🖐️ 가구를 터치하거나 드래그해 배치하세요'
     }
+    if (rotateBtn) rotateBtn.disabled = true
     if (flipBtn) flipBtn.disabled = true
     if (removeBtn) removeBtn.disabled = true
   }
@@ -865,8 +1054,7 @@ function attachIsoDrag(el, item, meta) {
     startY = e.clientY
     isMoved = false
 
-    const spanW = meta.baseW
-    const spanH = meta.baseH
+    const { spanW, spanH } = getItemSpan(item, meta)
 
     const stage = getSceneElement()
     const rect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0 }
@@ -930,7 +1118,7 @@ function attachIsoDrag(el, item, meta) {
           const isValid = targetCol >= 0 && (targetCol + isoDragCtx.spanW) <= ISO_GRID.cols &&
                           targetRow >= 0 && (targetRow + isoDragCtx.spanH) <= ISO_GRID.rows
 
-          highlightCandidate(clampedCol, clampedRow, isoDragCtx.meta)
+          highlightCandidate(clampedCol, clampedRow, isoDragCtx.meta, isoDragCtx.spanW, isoDragCtx.spanH)
           renderFootprintPreview(clampedCol, clampedRow, isoDragCtx.spanW, isoDragCtx.spanH, isValid, true)
         } else {
           clearHighlights()
@@ -972,10 +1160,11 @@ function attachIsoDrag(el, item, meta) {
   })
 }
 
-function highlightCandidate(col, row, meta) {
+function highlightCandidate(col, row, meta, customSpanW, customSpanH) {
   clearHighlights()
-  const spanW = meta.baseW
-  const spanH = meta.baseH
+  if (!meta) return
+  const spanW = customSpanW || meta.baseW
+  const spanH = customSpanH || meta.baseH
 
   const isValid = col >= 0 && (col + spanW) <= ISO_GRID.cols && row >= 0 && (row + spanH) <= ISO_GRID.rows
 
@@ -1005,8 +1194,7 @@ function applyDropItem(instanceId, col, row) {
   const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
   if (!meta) return
 
-  const spanW = meta.baseW
-  const spanH = meta.baseH
+  const { spanW, spanH } = getItemSpan(item, meta)
 
   const clampedX = Math.max(0, Math.min(ISO_GRID.cols - spanW, col))
   const clampedY = Math.max(0, Math.min(ISO_GRID.rows - spanH, row))
@@ -1021,6 +1209,28 @@ function applyDropItem(instanceId, col, row) {
 export function selectItem(instanceId) {
   state.selectedItemInstanceId = instanceId
   renderPlacedItems()
+}
+
+export function rotateSelectedItem() {
+  if (!state.selectedItemInstanceId) return
+  const item = state.placedItems.find(i => i.id === state.selectedItemInstanceId)
+  if (!item) return
+  const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
+  if (!meta) return
+
+  // 90도 단위 회전 (0° -> 90° -> 180° -> 270° -> 0°)
+  item.rotation = ((item.rotation || 0) + 90) % 360
+
+  // 회전된 점유 칸 기준으로 방 경계를 벗어나지 않도록 좌표 보정
+  const { spanW, spanH } = getItemSpan(item, meta)
+  item.x = Math.max(0, Math.min(ISO_GRID.cols - spanW, item.x))
+  item.y = Math.max(0, Math.min(ISO_GRID.rows - spanH, item.y))
+
+  renderPlacedItems()
+  const rotMsg = item.rotation === 0
+    ? '가구 회전을 원래 각도(0°)로 돌렸습니다 🔄'
+    : `가구를 90° 회전했습니다 (${item.rotation}°) 🔄`
+  showToast(rotMsg)
 }
 
 export function flipSelectedItem() {
@@ -1044,12 +1254,11 @@ export function removeSelectedItemToInventory() {
   state.placedItems.splice(itemIndex, 1)
   state.selectedItemInstanceId = null
 
-  // 중복 아이템 방지: 이미 인벤토리에 없으면 추가
-  if (!state.inventory.includes(item.furniture_id)) {
-    state.inventory.push(item.furniture_id)
+  // 인벤토리에 수량 정보가 누락되어 있다면 최소 1개 보장
+  if (!(state.inventory[item.furniture_id] > 0)) {
+    state.inventory[item.furniture_id] = 1
+    localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
   }
-  state.inventory = [...new Set(state.inventory)]
-  localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
   localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
 
   renderPlacedItems()
@@ -1073,9 +1282,20 @@ export function renderInventory() {
   const countBadge = document.getElementById('inventory-count-badge')
   if (!grid) return
 
-  if (countBadge) countBadge.innerText = state.inventory.length
+  // 보유 중인 아이템 목록 (수량 > 0 또는 현재 장착 중인 배경)
+  const ownedItemIds = Object.keys(state.inventory).filter(id => (state.inventory[id] || 0) > 0)
+  // 현재 장착 중인 배경이 인벤토리에 누락되어 있다면 자동 포함
+  ;['wallpaper', 'flooring', 'window'].forEach(cat => {
+    const bgId = state.roomTheme[cat]
+    if (bgId && !ownedItemIds.includes(bgId) && FURNITURE_CATALOG.some(f => f.id === bgId)) {
+      ownedItemIds.push(bgId)
+      state.inventory[bgId] = 1
+    }
+  })
 
-  if (state.inventory.length === 0) {
+  if (countBadge) countBadge.innerText = ownedItemIds.length
+
+  if (ownedItemIds.length === 0) {
     grid.innerHTML = `
       <div class="panel-empty-state panel-empty-full">
         <div class="panel-empty-icon">🎒</div>
@@ -1086,9 +1306,9 @@ export function renderInventory() {
   }
 
   // 보관함 필터링 (전체 / 가구 / 배경)
-  let invItems = state.inventory.map((itemId, idx) => {
+  let invItems = ownedItemIds.map(itemId => {
     const item = FURNITURE_CATALOG.find(f => f.id === itemId)
-    return { item, idx, itemId }
+    return { item, itemId }
   }).filter(entry => entry.item !== undefined)
 
   if (state.activeInventoryFilter === 'furniture') {
@@ -1107,9 +1327,14 @@ export function renderInventory() {
     return
   }
 
-  grid.innerHTML = invItems.map(({ item, idx, itemId }) => {
+  grid.innerHTML = invItems.map(({ item, itemId }) => {
     const isBg = ['wallpaper', 'flooring', 'window'].includes(item.category)
     const isEquipped = isBg && state.roomTheme[item.category] === item.id
+
+    const totalQty = state.inventory[itemId] || (isEquipped ? 1 : 0)
+    const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
+    const remainingQty = isBg ? (isEquipped ? 0 : 1) : Math.max(0, totalQty - placedCount)
+    const isExhausted = !isBg && remainingQty === 0
 
     let actionBtn = ''
     if (isBg) {
@@ -1119,22 +1344,32 @@ export function renderInventory() {
         actionBtn = `<button type="button" class="btn-card-equip" onclick="window.mineroom.equipBackground('${item.id}')">장착하기</button>`
       }
     } else {
-      actionBtn = `<button type="button" class="btn-card-action btn-card-place" onclick="window.mineroom.placeFromInventory('${itemId}', ${idx})">방에 배치</button>`
+      if (isExhausted) {
+        actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled>배치중</button>`
+      } else {
+        actionBtn = `<button type="button" class="btn-card-action btn-card-place" onclick="window.mineroom.placeFromInventory('${itemId}')">방에 배치</button>`
+      }
     }
 
     const badgeLabel = isBg
       ? (item.category === 'wallpaper' ? '벽지' : item.category === 'flooring' ? '바닥재' : '창문')
       : `${item.baseW}x${item.baseH}`
 
+    const qtyHtml = isBg
+      ? (isEquipped ? '<div class="card-qty-info">상태: <strong>장착 중</strong></div>' : '<div class="card-qty-info">상태: <strong>보관 중</strong></div>')
+      : `<div class="card-qty-info">남은 수량: <strong>${remainingQty}</strong> / ${totalQty}</div>`
+
     return `
-      <div class="furniture-card inventory-card" data-inv-idx="${idx}" data-furniture-id="${item.id}" data-is-bg="${isBg}">
+      <div class="furniture-card inventory-card ${isExhausted ? 'is-exhausted' : ''}" data-furniture-id="${item.id}" data-is-bg="${isBg}" data-remaining="${remainingQty}">
         <div class="furniture-card-thumb">
           <span class="card-size-badge">${badgeLabel}</span>
           ${isEquipped ? '<span class="card-equipped-tag">✓ 장착 중</span>' : ''}
+          ${isExhausted ? '<span class="card-placed-tag">배치중</span>' : ''}
           ${renderFurnitureResource(item)}
         </div>
         <div class="furniture-card-info">
           <h4 class="card-item-name">${item.name}</h4>
+          ${qtyHtml}
         </div>
         <div class="card-action-row">
           <div class="card-price">🪙 ${item.price}P</div>
@@ -1182,17 +1417,23 @@ function attachInventoryCardDrag() {
   cards.forEach(card => {
     // 배경 아이템은 방 캔버스 드래그 대상이 아니므로 이벤트 제외
     if (card.dataset.isBg === 'true') return
+    // 남은 수량이 0인 카드는 드래그 제외
+    if (card.dataset.remaining === '0' || card.classList.contains('is-exhausted')) return
 
     let isDown = false
     let startX = 0
     let startY = 0
     let isDragging = false
     const itemId = card.dataset.furnitureId
-    const invIdx = Number(card.dataset.invIdx)
     const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
 
     card.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button')) return
+
+      // 실시간 잔여 수량 재검증
+      const totalQty = state.inventory[itemId] || 0
+      const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
+      if (totalQty - placedCount <= 0) return
 
       isDown = true
       startX = e.clientX
@@ -1246,7 +1487,7 @@ function attachInventoryCardDrag() {
           const tile = screenToIso(px, py, stage.clientWidth)
 
           if (tile) {
-            placeAtCoordinates(itemId, invIdx, tile.col, tile.row)
+            placeAtCoordinates(itemId, tile.col, tile.row)
             return
           }
         }
@@ -1255,19 +1496,19 @@ function attachInventoryCardDrag() {
   })
 }
 
-function placeAtCoordinates(itemId, invIdx, col, row) {
+function placeAtCoordinates(itemId, col, row) {
   const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!meta) return
 
+  const totalQty = state.inventory[itemId] || 0
+  const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
+  if (totalQty - placedCount <= 0) {
+    showToast(`[${meta.name}]의 남은 수량이 없습니다! (모두 배치됨)`, 'error')
+    return
+  }
+
   const clampedX = Math.max(0, Math.min(ISO_GRID.cols - meta.baseW, col))
   const clampedY = Math.max(0, Math.min(ISO_GRID.rows - meta.baseH, row))
-
-  if (typeof invIdx === 'number' && invIdx >= 0) {
-    state.inventory.splice(invIdx, 1)
-  } else {
-    const idx = state.inventory.indexOf(itemId)
-    if (idx !== -1) state.inventory.splice(idx, 1)
-  }
 
   const newInstanceId = `item_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
   state.placedItems.push({
@@ -1279,7 +1520,6 @@ function placeAtCoordinates(itemId, invIdx, col, row) {
     flipH: false
   })
 
-  localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
   localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
 
   if (!state.isEditing) {
@@ -1293,9 +1533,16 @@ function placeAtCoordinates(itemId, invIdx, col, row) {
   showToast(`[${meta.name}]이(가) (${clampedX + 1}, ${clampedY + 1})에 배치되었습니다! ✨`)
 }
 
-export function placeFromInventory(itemId, invIndex) {
+export function placeFromInventory(itemId) {
   const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!meta) return
+
+  const totalQty = state.inventory[itemId] || 0
+  const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
+  if (totalQty - placedCount <= 0) {
+    showToast(`[${meta.name}]의 남은 수량이 없습니다! (모두 배치됨)`, 'error')
+    return
+  }
 
   let foundX = -1
   let foundY = -1
@@ -1305,8 +1552,7 @@ export function placeFromInventory(itemId, invIndex) {
       const overlap = state.placedItems.some(placed => {
         const pMeta = FURNITURE_CATALOG.find(f => f.id === placed.furniture_id)
         if (!pMeta) return false
-        const pW = pMeta.baseW
-        const pH = pMeta.baseH
+        const { spanW: pW, spanH: pH } = getItemSpan(placed, pMeta)
 
         return (
           c < placed.x + pW &&
@@ -1330,7 +1576,7 @@ export function placeFromInventory(itemId, invIndex) {
     foundY = 0
   }
 
-  placeAtCoordinates(itemId, invIndex, foundX, foundY)
+  placeAtCoordinates(itemId, foundX, foundY)
 }
 
 // ==========================================================================
@@ -1410,23 +1656,16 @@ export function renderShopTab() {
     items = items.filter(i => i.category === state.activeShopFilter && !i.special)
   }
 
-  // 이미 보유(보관함에 있거나 방에 배치됨 또는 장착 중) 중인 아이템은 상점 리스트에서 완전 제외
-  items = items.filter(item => {
-    const isOwned = state.inventory.includes(item.id) ||
-                    state.placedItems.some(p => p.furniture_id === item.id) ||
-                    (['wallpaper', 'flooring', 'window'].includes(item.category) && state.roomTheme[item.category] === item.id)
-    return !isOwned
-  })
-
+  // 가구는 상점에서 절대 숨기지 않고 계속 구매 가능 (배경/스페셜도 리스트에 표시하되 보유 시 비활성화)
   if (items.length === 0) {
     const totalCatalogCount = FURNITURE_CATALOG.length
     const emptyMsg = totalCatalogCount === 0
       ? '등록된 아이템이 아직 없습니다.<br><a href="admin.html" style="display:inline-block; margin-top:8px; color:#8c6a50; font-weight:700; text-decoration:underline;">🛠️ 관리자 페이지에서 새 아이템 등록하기 ➔</a>'
-      : '해당 카테고리의 모든 아이템을 보유 중입니다! 🎉'
+      : '해당 카테고리에 등록된 아이템이 없습니다. 📦'
 
     grid.innerHTML = `
       <div class="panel-empty-state panel-empty-full">
-        <div class="panel-empty-icon">${totalCatalogCount === 0 ? '🛠️' : '🎉'}</div>
+        <div class="panel-empty-icon">${totalCatalogCount === 0 ? '🛠️' : '📦'}</div>
         <div class="panel-empty-text">${emptyMsg}</div>
       </div>
     `
@@ -1436,6 +1675,9 @@ export function renderShopTab() {
   grid.innerHTML = items.map(item => {
     const isSpecial = item.special
     const isBg = ['wallpaper', 'flooring', 'window'].includes(item.category)
+    const currentOwned = state.inventory[item.id] || 0
+    const isOwnedBg = isBg && (currentOwned > 0 || state.roomTheme[item.category] === item.id)
+    const isOwnedSpecial = isSpecial && currentOwned > 0
 
     let isUnlocked = true
     let conditionStatusText = ''
@@ -1459,10 +1701,18 @@ export function renderShopTab() {
 
     let actionBtn = ''
     if (isSpecial) {
-      if (isUnlocked) {
+      if (isOwnedSpecial) {
+        actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled>보유중</button>`
+      } else if (isUnlocked) {
         actionBtn = `<button type="button" class="btn-card-action btn-card-buy" onclick="window.mineroom.claimSpecialItem('${item.id}')">🎉 무료 수령</button>`
       } else {
-        actionBtn = `<button type="button" class="btn-card-action" disabled title="${item.conditionDesc}">🔒 해금 필요</button>`
+        actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled title="${item.conditionDesc}">🔒 해금 필요</button>`
+      }
+    } else if (isBg) {
+      if (isOwnedBg) {
+        actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled>보유중</button>`
+      } else {
+        actionBtn = `<button type="button" class="btn-card-action btn-card-buy" onclick="window.mineroom.buyItem('${item.id}')">구매하기</button>`
       }
     } else {
       actionBtn = `<button type="button" class="btn-card-action btn-card-buy" onclick="window.mineroom.buyItem('${item.id}')">구매하기</button>`
@@ -1471,6 +1721,10 @@ export function renderShopTab() {
     const badgeLabel = isBg
       ? (item.category === 'wallpaper' ? '벽지' : item.category === 'flooring' ? '바닥재' : '창문')
       : `${item.baseW}x${item.baseH}`
+
+    const ownedInfoHtml = (!isBg && !isSpecial && currentOwned > 0)
+      ? `<div class="card-owned-text">보유: ${currentOwned}개</div>`
+      : ''
 
     return `
       <div class="furniture-card">
@@ -1481,6 +1735,7 @@ export function renderShopTab() {
         </div>
         <div class="furniture-card-info">
           <h4 class="card-item-name">${item.name}</h4>
+          ${ownedInfoHtml}
           ${isSpecial ? `
             <div class="shop-condition-box ${isUnlocked ? 'unlocked' : ''}">
               <div class="condition-header">
@@ -1509,10 +1764,8 @@ export function buyItem(itemId) {
 
   const isBg = ['wallpaper', 'flooring', 'window'].includes(item.category)
 
-  // 중복 아이템 방지 (이미 보유중인 경우 1개만 유지)
-  if (state.inventory.includes(itemId) ||
-      state.placedItems.some(p => p.furniture_id === itemId) ||
-      (isBg && state.roomTheme[item.category] === itemId)) {
+  // 배경 아이템: 이미 보유 중이면 구매 불가
+  if (isBg && ((state.inventory[itemId] || 0) > 0 || state.roomTheme[item.category] === itemId)) {
     showToast(`[${item.name}]은(는) 이미 보유하고 있습니다!`, 'normal')
     return
   }
@@ -1523,8 +1776,7 @@ export function buyItem(itemId) {
   }
 
   state.roomPoints -= item.price
-  state.inventory.push(itemId)
-  state.inventory = [...new Set(state.inventory)]
+  state.inventory[itemId] = (state.inventory[itemId] || 0) + 1
 
   // 배경 아이템인 경우 즉시 방에 자동 장착!
   if (isBg) {
@@ -1544,7 +1796,7 @@ export function buyItem(itemId) {
     const catName = item.category === 'wallpaper' ? '벽지' : item.category === 'flooring' ? '바닥재' : '창문'
     showToast(`[${item.name}] ${catName}을(를) 구매하여 보관함에 담고 즉시 장착했습니다! ✨`, 'success')
   } else {
-    showToast(`[${item.name}]을(를) 구매했습니다! 보관함에서 확인해보세요 🛍️`, 'success')
+    showToast(`[${item.name}]을(를) 구매했습니다! (총 보유: ${state.inventory[itemId]}개) 🛍️`, 'success')
   }
 }
 
@@ -1552,13 +1804,12 @@ export function claimSpecialItem(itemId) {
   const item = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!item) return
 
-  if (state.inventory.includes(itemId) || state.placedItems.some(p => p.furniture_id === itemId)) {
+  if ((state.inventory[itemId] || 0) > 0) {
     showToast('이미 보유하고 있는 특별 아이템입니다.')
     return
   }
 
-  state.inventory.push(itemId)
-  state.inventory = [...new Set(state.inventory)]
+  state.inventory[itemId] = 1
   localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
 
   renderShopTab()
@@ -1653,9 +1904,10 @@ export function clearAllPlacedItems() {
   if (!confirm('배치된 모든 가구를 보관함으로 옮기시겠습니까?')) return
 
   state.placedItems.forEach(item => {
-    state.inventory.push(item.furniture_id)
+    if (!(state.inventory[item.furniture_id] > 0)) {
+      state.inventory[item.furniture_id] = 1
+    }
   })
-  state.inventory = [...new Set(state.inventory)]
   state.placedItems = []
   state.selectedItemInstanceId = null
   localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
@@ -1663,7 +1915,7 @@ export function clearAllPlacedItems() {
 
   renderPlacedItems()
   renderInventory()
-  showToast('모든 가구를 보관함으로 옮겼습니다 🧹')
+  showToast('모든 가구를 보관함으로 회수했습니다 🧹')
 }
 
 // ==========================================================================
@@ -1813,10 +2065,9 @@ export function setRoomTier(tierId) {
   state.placedItems.forEach(item => {
     const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
     if (meta) {
-      const spanW = meta.baseW
-      const spanH = meta.baseH
-      item.x = Math.min(item.x, config.cols - spanW)
-      item.y = Math.min(item.y, config.rows - spanH)
+      const { spanW, spanH } = getItemSpan(item, meta)
+      item.x = Math.max(0, Math.min(item.x, config.cols - spanW))
+      item.y = Math.max(0, Math.min(item.y, config.rows - spanH))
     }
   })
   localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
@@ -1874,9 +2125,13 @@ window.addEventListener('resize', () => {
 window.mineroom = {
   loadFurnitureCatalog,
   renderFurnitureResource,
+  getFurnitureAnchor,
+  getFootprintDiamond,
+  getItemSpan,
   toggleEditMode,
   handleHeaderModeClick,
   selectItem,
+  rotateSelectedItem,
   flipSelectedItem,
   removeSelectedItemToInventory,
   saveMineroomLayout,

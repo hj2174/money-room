@@ -67,6 +67,9 @@ function mapDbToAdminItem(row) {
     category: row.category || 'decor-plant',
     baseW: Number(row.base_w) || 1,
     baseH: Number(row.base_h) || 1,
+    offsetX: Number(row.offset_x) || 0,
+    offsetY: Number(row.offset_y) || 0,
+    isFloorItem: Boolean(row.is_floor_item),
     price: Number(row.price) || 0,
     desc: row.description || '',
     special: Boolean(row.is_special),
@@ -202,10 +205,10 @@ export function updateLivePreview() {
   // 가구 리소스 요소 생성
   let resourceSvgElement = ''
   const res = adminState.currentResource
-  const isRug = category === 'sofa-rug' && baseW >= 2 && baseH >= 2
+  const isFloorItem = Boolean(document.getElementById('furn-is-floor-item')?.checked)
 
   let furnW, furnH, anchorY
-  if (isRug) {
+  if (isFloorItem) {
     furnW = (rightX - leftX) * 1.05
     furnH = (bottomY - topY) * 1.25
     anchorY = (bottomY - topY) * 0.55
@@ -223,8 +226,14 @@ export function updateLivePreview() {
     anchorY = 48
   }
 
-  const furnLeft = centerX - furnW / 2
-  const furnTop = centerY - anchorY
+  const rawOffX = Number(document.getElementById('furn-offset-x')?.value) || 0
+  const rawOffY = Number(document.getElementById('furn-offset-y')?.value) || 0
+  const previewScale = tileW / 64
+  const previewOffX = rawOffX * previewScale
+  const previewOffY = rawOffY * previewScale
+
+  const furnLeft = centerX - furnW / 2 + previewOffX
+  const furnTop = centerY - anchorY + previewOffY
 
   if (res.type === 'file' || res.type === 'url') {
     if (res.data) {
@@ -245,18 +254,15 @@ export function updateLivePreview() {
   }
 
   if (!resourceSvgElement) {
-    // 리소스가 없을 때 기본 클레이 큐브 플레이스홀더
-    const icon = category === 'bed' ? '🛏️'
-               : category === 'desk-chair' ? '🪑'
-               : category === 'sofa-rug' ? '🛋️'
-               : category === 'special' ? '🏆'
-               : '🪴'
+    const furnName = document.getElementById('furn-name')?.value.trim() || '미등록 가구'
+    const nameLen = Math.max(1, furnName.length)
+    const previewDiamondW = rightX - leftX
+    const calcFontSize = Math.max(9, Math.min(13, Math.round((previewDiamondW * 0.8) / nameLen)))
 
     resourceSvgElement = `
-      <g transform="translate(${centerX}, ${centerY - 18})">
-        <circle cx="0" cy="0" r="22" fill="#e8dfd1" stroke="#bfae9e" stroke-width="1.5"/>
-        <text x="0" y="7" font-size="20" text-anchor="middle">${icon}</text>
-      </g>
+      <!-- 리소스 미등록 시 점유 칸을 덮는 회색 마름모 박스와 가구 이름 -->
+      <polygon points="${diamondPoints}" fill="#cbd5e1" stroke="#64748b" stroke-width="1.5" fill-opacity="0.95"/>
+      <text x="${centerX}" y="${centerY}" text-anchor="middle" dominant-baseline="central" fill="#1e293b" font-size="${calcFontSize}px" font-weight="700">${furnName}</text>
     `
   }
 
@@ -452,6 +458,9 @@ export async function handleFormSubmit(e) {
   const price = Number(document.getElementById('furn-price')?.value) || 0
   const baseW = Math.max(1, Math.min(4, Number(document.getElementById('furn-base-w')?.value) || 1))
   const baseH = Math.max(1, Math.min(4, Number(document.getElementById('furn-base-h')?.value) || 1))
+  const offsetX = Number(document.getElementById('furn-offset-x')?.value) || 0
+  const offsetY = Number(document.getElementById('furn-offset-y')?.value) || 0
+  const isFloorItem = Boolean(document.getElementById('furn-is-floor-item')?.checked)
   const desc = document.getElementById('furn-desc')?.value.trim() || ''
   const isSpecial = Boolean(document.getElementById('furn-is-special')?.checked)
   const conditionType = isSpecial ? (document.getElementById('furn-cond-type')?.value || 'goal_count') : null
@@ -479,6 +488,9 @@ export async function handleFormSubmit(e) {
     category,
     base_w: baseW,
     base_h: baseH,
+    offset_x: offsetX,
+    offset_y: offsetY,
+    is_floor_item: isFloorItem,
     price,
     description: desc,
     image_url: imageUrl,
@@ -589,6 +601,14 @@ export function editFurniture(id) {
 
   const descText = document.getElementById('furn-desc')
   if (descText) descText.value = item.desc || ''
+
+  const offXInput = document.getElementById('furn-offset-x')
+  if (offXInput) offXInput.value = item.offsetX ?? 0
+  const offYInput = document.getElementById('furn-offset-y')
+  if (offYInput) offYInput.value = item.offsetY ?? 0
+
+  const floorCheck = document.getElementById('furn-is-floor-item')
+  if (floorCheck) floorCheck.checked = Boolean(item.isFloorItem)
 
   setGridPreset(item.baseW, item.baseH)
 
@@ -917,6 +937,7 @@ export async function seedSampleFurniture() {
       category: 'sofa-rug',
       base_w: 2,
       base_h: 2,
+      is_floor_item: true,
       price: 0,
       description: '차분한 차콜 톤에 모던한 사선 스티치 라인이 돋보이는 2x2 패브릭 러그.',
       is_special: false,
