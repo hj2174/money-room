@@ -125,10 +125,39 @@
                                 </div>
                             </div>
 
+                            <!-- 🎯 이미지 위치 보정 오프셋 (offset_x, offset_y) -->
+                            <div class="form-group">
+                                <label class="form-label">
+                                    🎯 이미지 위치 미세 보정 (오프셋)
+                                </label>
+                                <div class="grid-inputs-row">
+                                    <div class="grid-input-item">
+                                        <span class="grid-input-label">X 보정:</span>
+                                        <input type="number" id="furn-offset-x" class="form-input" value="0" oninput="window.adminStudio.updateLivePreview()">
+                                        <span class="grid-input-unit">px</span>
+                                    </div>
+                                    <div class="grid-input-item">
+                                        <span class="grid-input-label">Y 보정:</span>
+                                        <input type="number" id="furn-offset-y" class="form-input" value="0" oninput="window.adminStudio.updateLivePreview()">
+                                        <span class="grid-input-unit">px</span>
+                                    </div>
+                                </div>
+                                <span class="form-tip">에셋 기준(64px 타일) 오프셋이며, 렌더링 시 방 배율에 맞게 자동 스케일링됩니다.</span>
+                            </div>
+
                             <!-- 아이템 설명 -->
                             <div class="form-group">
                                 <label for="furn-desc" class="form-label">아이템 설명 (스토리 / 재질 / 감성 텍스트)</label>
                                 <textarea id="furn-desc" class="form-textarea" rows="2" placeholder="예: 내추럴 오크 원목과 소프트 패브릭이 어우러진 미니멀 가구."></textarea>
+                            </div>
+
+                            <!-- 🧶 바닥 깔개/러그 아이템 여부 (is_floor_item) -->
+                            <div class="form-group">
+                                <label class="custom-checkbox-label">
+                                    <input type="checkbox" id="furn-is-floor-item" onchange="window.adminStudio.updateLivePreview()">
+                                    <span class="checkbox-custom-mark"></span>
+                                    <span class="checkbox-text">🧶 바닥 아이템으로 설정 (러그/매트 - 다른 일반 가구 아래에 깔림)</span>
+                                </label>
                             </div>
 
                             <!-- 스페셜 해금 조건 설정 (옵션) -->
@@ -286,6 +315,9 @@ CREATE TABLE IF NOT EXISTS furniture_catalog (
     category VARCHAR(50) NOT NULL DEFAULT 'bed',
     base_w INT NOT NULL DEFAULT 1,
     base_h INT NOT NULL DEFAULT 1,
+    offset_x INT NOT NULL DEFAULT 0,
+    offset_y INT NOT NULL DEFAULT 0,
+    is_floor_item BOOLEAN NOT NULL DEFAULT FALSE,
     price INT NOT NULL DEFAULT 0,
     description TEXT,
     image_url TEXT,
@@ -297,14 +329,19 @@ CREATE TABLE IF NOT EXISTS furniture_catalog (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2. RLS 활성화 및 공용 접근 정책 (조회/생성/수정/삭제)
+-- 2. 기존 테이블에 컬럼 추가 (마이그레이션)
+ALTER TABLE furniture_catalog ADD COLUMN IF NOT EXISTS offset_x INT NOT NULL DEFAULT 0;
+ALTER TABLE furniture_catalog ADD COLUMN IF NOT EXISTS offset_y INT NOT NULL DEFAULT 0;
+ALTER TABLE furniture_catalog ADD COLUMN IF NOT EXISTS is_floor_item BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 3. RLS 활성화 및 공용 접근 정책 (조회/생성/수정/삭제)
 ALTER TABLE furniture_catalog ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Read Furniture Catalog" ON furniture_catalog FOR SELECT USING (true);
 CREATE POLICY "Public Insert Furniture Catalog" ON furniture_catalog FOR INSERT WITH CHECK (true);
 CREATE POLICY "Public Update Furniture Catalog" ON furniture_catalog FOR UPDATE USING (true);
 CREATE POLICY "Public Delete Furniture Catalog" ON furniture_catalog FOR DELETE USING (true);
 
--- 3. 실시간 동기화 복제 활성화 (선택)
+-- 4. 실시간 동기화 복제 활성화 (선택)
 ALTER PUBLICATION supabase_realtime ADD TABLE furniture_catalog;</code></pre>
             </div>
             <div class="admin-modal-actions">
