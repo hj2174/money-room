@@ -254,6 +254,13 @@ let state = {
   activeInventoryFilter: 'all', // 보관함 필터 ('all' | 'furniture' | 'background')
   activePanelTab: 'inventory', // 하단 패널 탭 ('inventory' | 'shop')
   isDbSynced: false, // Supabase DB 동기화 성공 여부
+  isDbConnected: false, // Supabase DB 세션 및 RPC 연결 정상 여부 (실패 시 구매/배치 비활성화)
+  isPurchasing: false, // 상점 가구 구매 RPC 처리 중 여부 (연타 중복 구매 방지)
+
+  // 🏡 내 방 DB 연동 상태 (rooms 테이블)
+  currentRoomId: null, // 방 고유 식별자 (UUID)
+  roomName: '내 방', // 방 이름
+  localPoints: 0, // localStorage 기존 포인트 보관 (마이그레이션용)
 
   // 🏠 방 확장 티어 & 커스텀 배경 테마 상태 (장착된 카탈로그 아이템 ID 또는 null)
   currentTier: 'studio', // 'studio' | 'one_room_plus' | 'penthouse'
@@ -262,6 +269,253 @@ let state = {
     flooring: null,
     window: null
   }
+}
+
+// --------------------------------------------------------------------------
+// 2-0. 구매 실패 에러 코드 한국어 변환 헬퍼
+// --------------------------------------------------------------------------
+export function formatPurchaseError(err) {
+  const msg = err?.message || err?.details || String(err || '')
+  if (msg.includes('INSUFFICIENT_POINTS')) {
+    return '보유 룸포인트가 부족합니다.'
+  }
+  if (msg.includes('ALREADY_OWNED')) {
+    return '이미 보유하고 있는 배경 아이템은 추가 구매할 수 없습니다.'
+  }
+  if (msg.includes('ITEM_NOT_FOUND')) {
+    return '존재하지 않는 가구 아이템입니다.'
+  }
+  if (msg.includes('BACKGROUND_SINGLE_ONLY')) {
+    return '배경 아이템은 한 번에 1개만 구매할 수 있습니다.'
+  }
+  if (msg.includes('INVALID_QUANTITY')) {
+    return '구매 수량은 1개 이상이어야 합니다.'
+  }
+  if (msg.includes('PERMISSION_DENIED')) {
+    return '해당 방의 가구를 구매할 권한이 없습니다.'
+  }
+  if (msg.includes('UNAUTHORIZED')) {
+    return '로그인 세션이 만료되었습니다. 새로고침 후 다시 시도해주세요.'
+  }
+  if (msg.includes('ROOM_NOT_FOUND')) {
+    return '방 정보를 찾을 수 없습니다.'
+  }
+  return `구매 중 오류가 발생했습니다: ${msg}`
+}
+
+// --------------------------------------------------------------------------
+// 2-1. 미니룸 에러 표시 헬퍼
+// --------------------------------------------------------------------------
+export function showRoomError(message) {
+  const banner = document.getElementById('mineroom-error-banner')
+  const defaultMsg = 'DB 연결 실패: 서버와 통신할 수 없습니다.'
+  const textMsg = message || defaultMsg
+  if (banner) {
+    const safeMsg = String(textMsg).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+    banner.innerHTML = `<span class="error-icon">⚠️</span> <span class="error-text">${safeMsg}</span>`
+    banner.style.display = 'flex'
+  }
+  showToast(textMsg, 'error')
+}
+
+// --------------------------------------------------------------------------
+// 2-2. 개인 방(내 방) 불러오기 및 생성 (세션 확인 & create_personal_room RPC 연동)
+// --------------------------------------------------------------------------
+export async function loadPersonalRoom() {
+  const banner = document.getElementById('mineroom-error-banner')
+  if (banner) banner.style.display = 'none'
+
+  try {
+    // 1. 미니룸 진입 시 supabase.auth.getSession()으로 세션 확인
+    let session = null
+    try {
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession()
+      if (sessionErr) {
+        console.warn('Supabase 세션 확인 알림:', sessionErr.message)
+      }
+      session = sessionData?.session
+    } catch (sErr) {
+      console.warn('세션 확인 중 오류:', sErr)
+    }
+
+    // 2. 세션이 없으면 supabase.auth.signInAnonymously() 호출
+    if (!session) {
+      const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously()
+      if (anonErr) {
+        throw new Error(`익명 로그인 실패 (${anonErr.message})`)
+      }
+      session = anonData?.session
+    }
+
+    if (!session) {
+      throw new Error('인증 세션을 준비할 수 없습니다.')
+    }
+
+    // 3. 세션이 준비된 뒤에만 create_personal_room RPC 호출 (내 방 조회 또는 1,000P 지급 신규 생성)
+    const { data, error } = await supabase.rpc('create_personal_room', { p_name: '내 방' })
+
+    if (error) {
+      throw error
+    }
+
+    if (!data || !data.room_id) {
+      throw new Error('방 식별자(room_id)를 수신하지 못했습니다.')
+    }
+
+    state.currentRoomId = data.room_id
+    state.roomName = data.name || '내 방'
+
+    // 4. DB(rooms 테이블)에서 최신 방 상태 및 포인트 직접 조회
+    const { data: roomRow, error: roomError } = await supabase
+      .from('rooms')
+      .select('id, name, points, tier, wallpaper_id, flooring_id, window_id')
+      .eq('id', data.room_id)
+      .single()
+
+    if (!roomError && roomRow) {
+      state.roomPoints = Number(roomRow.points) || 0
+      if (roomRow.tier) state.currentTier = roomRow.tier
+      if (roomRow.name) state.roomName = roomRow.name
+      if (roomRow.wallpaper_id) state.roomTheme.wallpaper = roomRow.wallpaper_id
+      if (roomRow.flooring_id) state.roomTheme.flooring = roomRow.flooring_id
+      if (roomRow.window_id) state.roomTheme.window = roomRow.window_id
+    } else {
+      state.roomPoints = Number(data.points) || 0
+    }
+
+    state.isDbConnected = true
+    state.isDbSynced = true
+    updateDbDisabledState()
+    renderHeaderStats()
+    renderShopTab()
+    return true
+  } catch (err) {
+    console.error('내 방 로드/생성 중 오류 발생:', err)
+    state.isDbConnected = false
+    state.isDbSynced = false
+    const msg = err.message || err.details || (typeof err === 'string' ? err : '서버와 통신할 수 없습니다.')
+    showRoomError(`DB 연결 실패: ${msg}`)
+    updateDbDisabledState()
+    return false
+  }
+}
+
+// --------------------------------------------------------------------------
+// 2-3. DB 연결 상태에 따른 UI 제어 및 구매/배치 비활성화
+// --------------------------------------------------------------------------
+export function updateDbDisabledState() {
+  const isOk = Boolean(state.isDbConnected)
+
+  // 1. 방 꾸미기 토글 버튼 (#btn-header-mode)
+  const btnHeader = document.getElementById('btn-header-mode')
+  if (btnHeader) {
+    if (!isOk) {
+      btnHeader.disabled = true
+      btnHeader.classList.add('btn-mode-disabled')
+      btnHeader.title = 'DB 연결 실패로 방을 꾸밀 수 없습니다.'
+    } else {
+      btnHeader.disabled = false
+      btnHeader.classList.remove('btn-mode-disabled')
+      btnHeader.title = state.isEditing ? '배치 저장하기' : '방 꾸미기'
+    }
+  }
+
+  // 2. 툴바 상태 문구 및 툴바 조작 버튼 비활성화
+  const toolbarStatus = document.getElementById('room-toolbar-status')
+  if (toolbarStatus && !isOk) {
+    toolbarStatus.innerHTML = '<span class="status-warning" style="color: #ef4444; font-weight: 600;">⚠️ DB 연결 실패: 구매 및 가구 배치가 비활성화되었습니다.</span>'
+  }
+
+  const toolbarBtns = document.querySelectorAll('.room-toolbar-buttons .btn-room-action')
+  toolbarBtns.forEach(btn => {
+    btn.disabled = !isOk
+  })
+
+  // 3. 공간 평형대 확장 배지
+  const tierBadge = document.getElementById('stat-room-tier')
+  if (tierBadge) {
+    if (!isOk) {
+      tierBadge.style.pointerEvents = 'none'
+      tierBadge.style.opacity = '0.6'
+      tierBadge.title = 'DB 연결 실패로 평형대를 변경할 수 없습니다.'
+    } else {
+      tierBadge.style.pointerEvents = 'auto'
+      tierBadge.style.opacity = '1'
+      tierBadge.title = '평형대 확장'
+    }
+  }
+}
+
+// --------------------------------------------------------------------------
+// 2-4. 방 보관함(room_inventory) DB 동적 로드
+// --------------------------------------------------------------------------
+export async function loadRoomInventory() {
+  if (!state.currentRoomId) return state.inventory
+
+  try {
+    const { data, error } = await supabase
+      .from('room_inventory')
+      .select('furniture_id, quantity')
+      .eq('room_id', state.currentRoomId)
+
+    if (error) {
+      console.warn('room_inventory DB 조회 알림:', error.message)
+      return state.inventory
+    }
+
+    const newInv = {}
+    if (Array.isArray(data)) {
+      data.forEach(row => {
+        const qty = Number(row.quantity) || 0
+        if (qty > 0) {
+          newInv[row.furniture_id] = qty
+        }
+      })
+    }
+    state.inventory = newInv
+    return state.inventory
+  } catch (err) {
+    console.error('room_inventory DB 로드 오류:', err)
+    return state.inventory
+  }
+}
+
+// --------------------------------------------------------------------------
+// 2-5. 방 배치(room_placed_items) DB 동적 로드
+// --------------------------------------------------------------------------
+export async function loadRoomPlacements() {
+  if (!state.currentRoomId) return state.placedItems
+
+  try {
+    let { data, error } = await supabase
+      .from('room_placed_items')
+      .select('*')
+      .eq('room_id', state.currentRoomId)
+
+    // 신규 room_placed_items 테이블 조회 실패 시 mineroom_placed 호환 폴백
+    if (error) {
+      const fallback = await supabase.from('mineroom_placed').select('*')
+      if (!fallback.error) {
+        data = fallback.data
+        error = null
+      }
+    }
+
+    if (!error && Array.isArray(data)) {
+      state.placedItems = data.map(row => ({
+        id: String(row.id),
+        furniture_id: row.furniture_id,
+        x: Number(row.x) || 0,
+        y: Number(row.y) || 0,
+        rotation: Number(row.rotation) || 0,
+        flipH: Boolean(row.flip_h || row.fliph || false)
+      }))
+      state.isDbSynced = true
+    }
+  } catch (err) {
+    console.warn('room_placed_items 로드 알림:', err.message)
+  }
+  return state.placedItems
 }
 
 // ==========================================================================
@@ -321,13 +575,10 @@ export async function loadFinancialData() {
     })
     state.achievedGoalsCount = completedCount
 
-    const bonusPoints = Math.floor(state.totalAsset / 100000) * 100
+    // localStorage의 포인트 값은 읽어두기만 함 (향후 마이그레이션용), 쓰기 및 DB 포인트 덮어쓰기 전면 중단
     const savedPoints = localStorage.getItem(STORAGE_KEY_POINTS)
-    if (savedPoints === null) {
-      state.roomPoints = 1000 + bonusPoints
-      localStorage.setItem(STORAGE_KEY_POINTS, String(state.roomPoints))
-    } else {
-      state.roomPoints = Number(savedPoints)
+    if (savedPoints !== null) {
+      state.localPoints = Number(savedPoints) || 0
     }
 
     renderHeaderStats()
@@ -344,111 +595,37 @@ export async function initMineroomData() {
   // 1. 가구 카탈로그 동적 로드 (Supabase DB 'furniture_catalog' 및 로컬스토리지)
   await loadFurnitureCatalog()
 
-  try {
-    const savedInv = localStorage.getItem(STORAGE_KEY_INVENTORY)
+  // 2. 내 방(personal room) 조회 또는 생성 및 DB 포인트 동기화 (세션 확인 및 RPC 호출)
+  const roomLoaded = await loadPersonalRoom()
+
+  // ⚠️ RPC 실패 시: localStorage 값으로 조용히 폴백하지 않고, “DB 연결 실패”를 화면에 명확히 표시하고 구매/배치를 비활성화
+  if (!roomLoaded) {
     state.inventory = {}
-
-    if (savedInv) {
-      const parsed = JSON.parse(savedInv)
-      if (Array.isArray(parsed)) {
-        // 기존 배열 포맷 마이그레이션: ['id1', 'id2', ...] -> { id1: 1, id2: 1, ... }
-        parsed.forEach(id => {
-          if (FURNITURE_CATALOG.some(f => f.id === id)) {
-            state.inventory[id] = (state.inventory[id] || 0) + 1
-          }
-        })
-      } else if (typeof parsed === 'object' && parsed !== null) {
-        Object.entries(parsed).forEach(([id, qty]) => {
-          const num = Number(qty)
-          if (num > 0 && FURNITURE_CATALOG.some(f => f.id === id)) {
-            state.inventory[id] = num
-          }
-        })
-      }
-    } else {
-      // 카탈로그에서 무료(0P) 가구가 있으면 기본 보관함에 지급 (각 1개)
-      const defaultFreeItems = FURNITURE_CATALOG.filter(f => f.price === 0 && !f.special)
-      defaultFreeItems.forEach(f => {
-        state.inventory[f.id] = 1
-      })
-    }
-    localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
-  } catch (e) {
-    console.warn('인벤토리 로드 실패:', e)
-    state.inventory = {}
+    state.placedItems = []
+    renderIsoScene()
+    renderPlacedItems()
+    renderInventory()
+    renderShopTab()
+    renderHeaderStats()
+    updateDbDisabledState()
+    return
   }
 
-  let loadedFromCloud = false
-  try {
-    const { data, error } = await supabase.from('mineroom_placed').select('*')
-    if (!error && Array.isArray(data)) {
-      if (data.length > 0) {
-        state.placedItems = data.map(row => ({
-          id: String(row.id),
-          furniture_id: row.furniture_id,
-          x: Number(row.x) || 0,
-          y: Number(row.y) || 0,
-          rotation: Number(row.rotation) || 0,
-          flipH: Boolean(row.flip_h || row.fliph || false)
-        }))
-        // 배치된 가구의 수량이 인벤토리보다 크면 인벤토리 수량을 최소 배치 개수 이상으로 보정
-        state.placedItems.forEach(p => {
-          const placedCount = state.placedItems.filter(item => item.furniture_id === p.furniture_id).length
-          if ((state.inventory[p.furniture_id] || 0) < placedCount) {
-            state.inventory[p.furniture_id] = placedCount
-          }
-        })
-        localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
-        localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-      }
-      state.isDbSynced = true
-      loadedFromCloud = true
-    } else if (error) {
-      console.warn('Supabase 배치 조회 알림:', error.message)
-      state.isDbSynced = false
-    }
-  } catch (e) {
-    console.warn('Supabase 연동 대기 (로컬 사용):', e.message)
-    state.isDbSynced = false
-  }
+  // 3. 보관함은 room_inventory를 DB에서 읽어서 표시
+  await loadRoomInventory()
 
-  if (!loadedFromCloud) {
-    try {
-      const savedPlaced = localStorage.getItem(STORAGE_KEY_PLACED)
-      // 구버전 기본 데이터가 남아있는 경우 신규 기본 배치로 자동 마이그레이션
-      const isOldDefault = savedPlaced && (savedPlaced.includes('item_1') && savedPlaced.includes('bed_pastel'))
-      if (savedPlaced && !isOldDefault) {
-        state.placedItems = JSON.parse(savedPlaced)
-        // 배치된 가구의 수량이 인벤토리보다 크면 인벤토리 수량을 최소 배치 개수 이상으로 보정
-        state.placedItems.forEach(p => {
-          const placedCount = state.placedItems.filter(item => item.furniture_id === p.furniture_id).length
-          if ((state.inventory[p.furniture_id] || 0) < placedCount) {
-            state.inventory[p.furniture_id] = placedCount
-          }
-        })
-        localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
-        localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-      } else {
-        state.placedItems = []
-        localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-      }
-    } catch (e) {
-      console.warn('로컬 배치 로드 실패:', e)
-    }
-  }
+  // 4. room_placed_items 배치 데이터 DB 로드
+  await loadRoomPlacements()
 
-  // 테마 & 스킨 & 방 평형대 티어 로컬 데이터 복원
+  // 테마 & 방 평형대 티어 로컬 데이터 복원
   try {
     const savedTheme = localStorage.getItem(STORAGE_KEY_THEME)
     if (savedTheme) state.roomTheme = JSON.parse(savedTheme)
 
-    const savedSkins = localStorage.getItem(STORAGE_KEY_SKINS)
-    if (savedSkins) state.unlockedSkins = JSON.parse(savedSkins)
-
     const savedTier = localStorage.getItem(STORAGE_KEY_TIER)
     if (savedTier && ROOM_TIERS[savedTier]) state.currentTier = savedTier
   } catch (e) {
-    console.warn('스킨/티어 복원 실패:', e)
+    console.warn('테마/티어 복원 실패:', e)
   }
 
   updateDbSyncBadge()
@@ -1212,6 +1389,10 @@ export function selectItem(instanceId) {
 }
 
 export function rotateSelectedItem() {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
+    return
+  }
   if (!state.selectedItemInstanceId) return
   const item = state.placedItems.find(i => i.id === state.selectedItemInstanceId)
   if (!item) return
@@ -1234,6 +1415,10 @@ export function rotateSelectedItem() {
 }
 
 export function flipSelectedItem() {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
+    return
+  }
   if (!state.selectedItemInstanceId) return
   const item = state.placedItems.find(i => i.id === state.selectedItemInstanceId)
   if (!item) return
@@ -1244,6 +1429,10 @@ export function flipSelectedItem() {
 }
 
 export function removeSelectedItemToInventory() {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
+    return
+  }
   if (!state.selectedItemInstanceId) return
   const itemIndex = state.placedItems.findIndex(i => i.id === state.selectedItemInstanceId)
   if (itemIndex === -1) return
@@ -1295,6 +1484,16 @@ export function renderInventory() {
 
   if (countBadge) countBadge.innerText = ownedItemIds.length
 
+  if (!state.isDbConnected) {
+    grid.innerHTML = `
+      <div class="panel-empty-state panel-empty-full">
+        <div class="panel-empty-icon">⚠️</div>
+        <div class="panel-empty-text" style="color: #ef4444; font-weight: 600;">DB 연결 실패<br><span style="font-size: 13px; color: #64748b; font-weight: 400;">서버 연결 실패로 보관함 및 가구 배치가 비활성화되었습니다.</span></div>
+      </div>
+    `
+    return
+  }
+
   if (ownedItemIds.length === 0) {
     grid.innerHTML = `
       <div class="panel-empty-state panel-empty-full">
@@ -1337,7 +1536,9 @@ export function renderInventory() {
     const isExhausted = !isBg && remainingQty === 0
 
     let actionBtn = ''
-    if (isBg) {
+    if (!state.isDbConnected) {
+      actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled title="DB 연결 실패로 배치가 비활성화되었습니다">배치 불가</button>`
+    } else if (isBg) {
       if (isEquipped) {
         actionBtn = `<button type="button" class="btn-card-unequip" onclick="window.mineroom.unequipBackground('${item.category}')">장착 해제</button>`
       } else {
@@ -1356,8 +1557,8 @@ export function renderInventory() {
       : `${item.baseW}x${item.baseH}`
 
     const qtyHtml = isBg
-      ? (isEquipped ? '<div class="card-qty-info">상태: <strong>장착 중</strong></div>' : '<div class="card-qty-info">상태: <strong>보관 중</strong></div>')
-      : `<div class="card-qty-info">남은 수량: <strong>${remainingQty}</strong> / ${totalQty}</div>`
+      ? (isEquipped ? `<div class="card-qty-info">남은 수량: <strong>0</strong> / 보유 수량: ${totalQty} (장착 중)</div>` : `<div class="card-qty-info">남은 수량: <strong>${remainingQty}</strong> / 보유 수량: ${totalQty}</div>`)
+      : `<div class="card-qty-info">남은 수량: <strong>${remainingQty}</strong> / 보유 수량: ${totalQty}</div>`
 
     return `
       <div class="furniture-card inventory-card ${isExhausted ? 'is-exhausted' : ''}" data-furniture-id="${item.id}" data-is-bg="${isBg}" data-remaining="${remainingQty}">
@@ -1384,6 +1585,10 @@ export function renderInventory() {
 
 // 배경 아이템 장착 함수
 export function equipBackground(itemId) {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 배경을 장착할 수 없습니다.')
+    return
+  }
   const item = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!item) return
 
@@ -1401,6 +1606,10 @@ export function equipBackground(itemId) {
 
 // 배경 아이템 장착 해제 함수 (기본 스타일로 복귀)
 export function unequipBackground(category) {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 배경을 장착 해제할 수 없습니다.')
+    return
+  }
   if (!['wallpaper', 'flooring', 'window'].includes(category)) return
 
   state.roomTheme[category] = null
@@ -1413,6 +1622,8 @@ export function unequipBackground(category) {
 }
 
 function attachInventoryCardDrag() {
+  if (!state.isDbConnected) return
+
   const cards = document.querySelectorAll('.inventory-card')
   cards.forEach(card => {
     // 배경 아이템은 방 캔버스 드래그 대상이 아니므로 이벤트 제외
@@ -1428,6 +1639,7 @@ function attachInventoryCardDrag() {
     const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
 
     card.addEventListener('pointerdown', (e) => {
+      if (!state.isDbConnected) return
       if (e.target.closest('button')) return
 
       // 실시간 잔여 수량 재검증
@@ -1497,6 +1709,10 @@ function attachInventoryCardDrag() {
 }
 
 function placeAtCoordinates(itemId, col, row) {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 가구를 배치할 수 없습니다.')
+    return
+  }
   const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!meta) return
 
@@ -1534,6 +1750,10 @@ function placeAtCoordinates(itemId, col, row) {
 }
 
 export function placeFromInventory(itemId) {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 가구를 배치할 수 없습니다.')
+    return
+  }
   const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!meta) return
 
@@ -1700,11 +1920,13 @@ export function renderShopTab() {
     }
 
     let actionBtn = ''
-    if (isSpecial) {
+    if (!state.isDbConnected) {
+      actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled title="DB 연결 실패로 구매가 비활성화되었습니다">구매 불가</button>`
+    } else if (isSpecial) {
       if (isOwnedSpecial) {
         actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled>보유중</button>`
       } else if (isUnlocked) {
-        actionBtn = `<button type="button" class="btn-card-action btn-card-buy" onclick="window.mineroom.claimSpecialItem('${item.id}')">🎉 무료 수령</button>`
+        actionBtn = `<button type="button" class="btn-card-action btn-card-buy" onclick="window.mineroom.claimSpecialItem('${item.id}')" ${state.isPurchasing ? 'disabled' : ''}>🎉 무료 수령</button>`
       } else {
         actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled title="${item.conditionDesc}">🔒 해금 필요</button>`
       }
@@ -1712,10 +1934,10 @@ export function renderShopTab() {
       if (isOwnedBg) {
         actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled>보유중</button>`
       } else {
-        actionBtn = `<button type="button" class="btn-card-action btn-card-buy" onclick="window.mineroom.buyItem('${item.id}')">구매하기</button>`
+        actionBtn = `<button type="button" class="btn-card-action btn-card-buy" data-buy-id="${item.id}" onclick="window.mineroom.buyItem('${item.id}', event)" ${state.isPurchasing ? 'disabled' : ''}>${state.isPurchasing ? '처리 중...' : '구매하기'}</button>`
       }
     } else {
-      actionBtn = `<button type="button" class="btn-card-action btn-card-buy" onclick="window.mineroom.buyItem('${item.id}')">구매하기</button>`
+      actionBtn = `<button type="button" class="btn-card-action btn-card-buy" data-buy-id="${item.id}" onclick="window.mineroom.buyItem('${item.id}', event)" ${state.isPurchasing ? 'disabled' : ''}>${state.isPurchasing ? '처리 중...' : '구매하기'}</button>`
     }
 
     const badgeLabel = isBg
@@ -1758,49 +1980,101 @@ export function renderShopTab() {
   }).join('')
 }
 
-export function buyItem(itemId) {
+export async function buyItem(itemId, event) {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 가구를 구매할 수 없습니다.')
+    return
+  }
+
+  // 구매 처리 중 연타 중복 구매 방지
+  if (state.isPurchasing) {
+    return
+  }
+
+  if (!state.currentRoomId) {
+    showRoomError('방 정보(room_id)가 없습니다. 페이지를 새로고침해주세요.')
+    return
+  }
+
   const item = FURNITURE_CATALOG.find(f => f.id === itemId)
-  if (!item) return
-
-  const isBg = ['wallpaper', 'flooring', 'window'].includes(item.category)
-
-  // 배경 아이템: 이미 보유 중이면 구매 불가
-  if (isBg && ((state.inventory[itemId] || 0) > 0 || state.roomTheme[item.category] === itemId)) {
-    showToast(`[${item.name}]은(는) 이미 보유하고 있습니다!`, 'normal')
+  if (!item) {
+    showToast('존재하지 않는 가구 아이템입니다.', 'error')
     return
   }
 
-  if (state.roomPoints < item.price) {
-    showToast(`포인트가 부족합니다! (현재: ${state.roomPoints.toLocaleString()}P / 필요: ${item.price}P)`, 'error')
-    return
-  }
+  // 구매 처리 중 버튼 비활성화 (연타 방지)
+  state.isPurchasing = true
+  const buyButtons = document.querySelectorAll('.btn-card-buy')
+  buyButtons.forEach(btn => {
+    btn.disabled = true
+    if (btn.dataset.buyId === itemId) {
+      btn.innerText = '구매 중...'
+    }
+  })
 
-  state.roomPoints -= item.price
-  state.inventory[itemId] = (state.inventory[itemId] || 0) + 1
+  try {
+    // 1. purchase_furniture(p_room_id, p_furniture_id, p_quantity) RPC만 호출 (가격은 클라이언트에서 보내지 않음)
+    const { data, error } = await supabase.rpc('purchase_furniture', {
+      p_room_id: state.currentRoomId,
+      p_furniture_id: itemId,
+      p_quantity: 1
+    })
 
-  // 배경 아이템인 경우 즉시 방에 자동 장착!
-  if (isBg) {
-    state.roomTheme[item.category] = itemId
-    localStorage.setItem(STORAGE_KEY_THEME, JSON.stringify(state.roomTheme))
-    renderIsoScene()
-  }
+    if (error) {
+      throw error
+    }
 
-  localStorage.setItem(STORAGE_KEY_POINTS, String(state.roomPoints))
-  localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
+    // 2. RPC가 돌려준 remaining_points로 화면 포인트를 갱신
+    if (data && typeof data.remaining_points === 'number') {
+      state.roomPoints = data.remaining_points
+    }
 
-  renderHeaderStats()
-  renderShopTab()
-  renderInventory()
+    // 3. 배경 아이템인 경우 방에 즉시 자동 장착
+    const isBg = ['wallpaper', 'flooring', 'window'].includes(item.category)
+    if (isBg) {
+      state.roomTheme[item.category] = itemId
+      try {
+        localStorage.setItem(STORAGE_KEY_THEME, JSON.stringify(state.roomTheme))
+      } catch (e) {}
+      renderIsoScene()
+    }
 
-  if (isBg) {
-    const catName = item.category === 'wallpaper' ? '벽지' : item.category === 'flooring' ? '바닥재' : '창문'
-    showToast(`[${item.name}] ${catName}을(를) 구매하여 보관함에 담고 즉시 장착했습니다! ✨`, 'success')
-  } else {
-    showToast(`[${item.name}]을(를) 구매했습니다! (총 보유: ${state.inventory[itemId]}개) 🛍️`, 'success')
+    // 4. 구매 성공 후 DB에서 인벤토리를 다시 불러와 화면 갱신
+    await loadRoomInventory()
+
+    renderHeaderStats()
+    renderShopTab()
+    renderInventory()
+
+    if (isBg) {
+      const catName = item.category === 'wallpaper' ? '벽지' : item.category === 'flooring' ? '바닥재' : '창문'
+      showToast(`[${item.name}] ${catName}을(를) 구매하여 보관함에 담고 즉시 장착했습니다! ✨`, 'success')
+    } else {
+      const newQty = state.inventory[itemId] || 1
+      showToast(`[${item.name}]을(를) 구매했습니다! (총 보유: ${newQty}개) 🛍️`, 'success')
+    }
+  } catch (err) {
+    console.error('구매 실패:', err)
+    // 실패 시 에러 코드(INSUFFICIENT_POINTS, ALREADY_OWNED, ITEM_NOT_FOUND 등)를 한국어 안내 문구로 변환하여 표시
+    const koreanMsg = formatPurchaseError(err)
+    showToast(koreanMsg, 'error')
+  } finally {
+    state.isPurchasing = false
+    buyButtons.forEach(btn => {
+      btn.disabled = false
+      if (btn.dataset.buyId === itemId) {
+        btn.innerText = '구매하기'
+      }
+    })
+    renderShopTab()
   }
 }
 
 export function claimSpecialItem(itemId) {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 아이템을 수령할 수 없습니다.')
+    return
+  }
   const item = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!item) return
 
@@ -1834,48 +2108,49 @@ export async function saveMineroomLayout() {
   }
 
   try {
-    const { error: delError } = await supabase
-      .from('mineroom_placed')
-      .delete()
-      .neq('id', '__dummy_all__')
+    if (state.currentRoomId) {
+      // 1. room_placed_items 테이블에서 현재 방의 기존 배치 삭제
+      await supabase.from('room_placed_items').delete().eq('room_id', state.currentRoomId)
 
-    if (delError) {
-      if (delError.code === 'PGRST205') {
-        throw new Error('TABLE_NOT_FOUND')
+      if (state.placedItems.length > 0) {
+        const recordsToInsert = state.placedItems.map(item => ({
+          id: item.id,
+          room_id: state.currentRoomId,
+          furniture_id: item.furniture_id,
+          x: item.x,
+          y: item.y,
+          rotation: item.rotation || 0,
+          flip_h: Boolean(item.flipH),
+          updated_at: new Date().toISOString()
+        }))
+
+        const { error: insError } = await supabase.from('room_placed_items').insert(recordsToInsert)
+        if (insError) {
+          console.warn('room_placed_items 저장 알림, mineroom_placed 호환 시도:', insError.message)
+          await supabase.from('mineroom_placed').delete().neq('id', '__dummy_all__')
+          await supabase.from('mineroom_placed').insert(recordsToInsert.map(({ room_id, ...rest }) => rest))
+        }
       }
-      throw delError
-    }
-
-    if (state.placedItems.length > 0) {
-      const recordsToInsertWithFlip = state.placedItems.map(item => ({
-        id: item.id,
-        furniture_id: item.furniture_id,
-        x: item.x,
-        y: item.y,
-        rotation: item.rotation || 0,
-        flip_h: Boolean(item.flipH),
-        updated_at: new Date().toISOString()
-      }))
-
-      let { error: insError } = await supabase
+    } else {
+      const { error: delError } = await supabase
         .from('mineroom_placed')
-        .insert(recordsToInsertWithFlip)
+        .delete()
+        .neq('id', '__dummy_all__')
 
-      // DB 테이블에 flip_h 컬럼이 아직 없는 경우 안전한 Fallback 저장
-      if (insError && (insError.message?.includes('flip_h') || insError.code === '42703' || insError.code === 'PGRST204')) {
-        const recordsWithoutFlip = state.placedItems.map(item => ({
+      if (delError && delError.code !== 'PGRST205') throw delError
+
+      if (state.placedItems.length > 0) {
+        const records = state.placedItems.map(item => ({
           id: item.id,
           furniture_id: item.furniture_id,
           x: item.x,
           y: item.y,
           rotation: item.rotation || 0,
+          flip_h: Boolean(item.flipH),
           updated_at: new Date().toISOString()
         }))
-        const retry = await supabase.from('mineroom_placed').insert(recordsWithoutFlip)
-        insError = retry.error
+        await supabase.from('mineroom_placed').insert(records)
       }
-
-      if (insError) throw insError
     }
 
     state.isDbSynced = true
@@ -1897,6 +2172,10 @@ export async function saveMineroomLayout() {
 }
 
 export function clearAllPlacedItems() {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
+    return
+  }
   if (state.placedItems.length === 0) {
     showToast('방에 배치된 가구가 없습니다.')
     return
@@ -1936,6 +2215,10 @@ function renderHeaderStats() {
 
 // 🏠 공간 평형대 확장 티어 모달
 export function openTierModal() {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 평형대를 확장할 수 없습니다.')
+    return
+  }
   const modal = document.getElementById('tier-modal')
   renderTierModal()
   if (modal) modal.classList.add('open')
@@ -1992,6 +2275,10 @@ export function renderTierModal() {
 }
 
 export function handleHeaderModeClick() {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 방을 꾸밀 수 없습니다.')
+    return
+  }
   if (!state.isEditing) {
     toggleEditMode(true)
   } else {
@@ -2000,6 +2287,10 @@ export function handleHeaderModeClick() {
 }
 
 export function toggleEditMode(forceState) {
+  if (!state.isDbConnected) {
+    state.isEditing = false
+    return
+  }
   state.isEditing = (typeof forceState === 'boolean') ? forceState : !state.isEditing
   const stage = document.getElementById('mineroom-stage')
   const btnHeader = document.getElementById('btn-header-mode')
@@ -2056,6 +2347,10 @@ export function setPanelTab(tabName) {
 
 // 🏠 방 확장 티어 변경 함수
 export function setRoomTier(tierId) {
+  if (!state.isDbConnected) {
+    showRoomError('DB 연결 실패 상태에서는 평형대를 확장할 수 없습니다.')
+    return
+  }
   if (!ROOM_TIERS[tierId]) return
   state.currentTier = tierId
   localStorage.setItem(STORAGE_KEY_TIER, tierId)
@@ -2155,7 +2450,13 @@ window.mineroom = {
   renderTierModal,
   openSqlModal,
   closeSqlModal,
-  copySqlCode
+  copySqlCode,
+  loadPersonalRoom,
+  showRoomError,
+  updateDbDisabledState,
+  loadRoomInventory,
+  loadRoomPlacements,
+  formatPurchaseError
 }
 
 if (typeof document !== 'undefined') {
