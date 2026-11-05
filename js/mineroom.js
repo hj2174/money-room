@@ -252,6 +252,7 @@ let state = {
   isDbConnected: false, // Supabase DB 세션 및 RPC 연결 정상 여부
   isPurchasing: false, // 상점 가구 구매 RPC 처리 중 여부
   isSwitchingSpace: false, // 다중 방 전환/해금 RPC 처리 중 여부 (연타 방지)
+  isEquippingTheme: false, // 배경 테마 장착/해제 RPC 처리 중 여부 (연타 방지)
 
   // 🏡 집(House / rooms) 및 방(Space / room_spaces) DB 연동 상태
   currentRoomId: null, // 집 고유 식별자 (UUID)
@@ -321,6 +322,32 @@ export function formatPlacementError(err) {
     return '이미 존재하는 가구 식별자입니다. 다시 시도해주세요.'
   }
   return `가구 배치 동기화 실패: ${msg}`
+}
+
+// --------------------------------------------------------------------------
+// 2-0-3. 방 테마(배경) 장착 오류 한국어 변환 헬퍼 (equip_space_theme RPC 오류)
+// --------------------------------------------------------------------------
+export function formatThemeError(err) {
+  const msg = err?.message || err?.details || String(err || '')
+  if (msg.includes('NOT_IN_INVENTORY')) {
+    return '집 보관함에 보유하지 않은 배경 아이템입니다. 먼저 상점에서 구매해 주세요.'
+  }
+  if (msg.includes('CATEGORY_MISMATCH')) {
+    return '선택한 슬롯과 배경 아이템의 종류가 일치하지 않습니다.'
+  }
+  if (msg.includes('INVALID_SLOT')) {
+    return '유효하지 않은 배경 슬롯입니다. (wallpaper, flooring, window만 지원)'
+  }
+  if (msg.includes('SPACE_NOT_FOUND')) {
+    return '방을 찾을 수 없습니다.'
+  }
+  if (msg.includes('PERMISSION_DENIED')) {
+    return '해당 방의 테마를 변경할 권한이 없습니다.'
+  }
+  if (msg.includes('UNAUTHORIZED')) {
+    return '로그인 세션이 필요합니다.'
+  }
+  return `배경 변경 실패: ${msg}`
 }
 
 // --------------------------------------------------------------------------
@@ -1746,10 +1773,11 @@ export function renderInventory() {
     if (!state.isDbConnected) {
       actionBtn = `<button type="button" class="btn-card-action btn-card-disabled" disabled title="DB 연결 실패로 배치가 비활성화되었습니다">배치 불가</button>`
     } else if (isBg) {
+      const isThemeBusy = Boolean(state.isEquippingTheme)
       if (isEquipped) {
-        actionBtn = `<button type="button" class="btn-card-unequip" onclick="window.mineroom.unequipBackground('${item.category}')">장착 해제</button>`
+        actionBtn = `<button type="button" class="btn-card-unequip" ${isThemeBusy ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''} onclick="window.mineroom.unequipBackground('${item.category}')">${isThemeBusy ? '처리 중...' : '장착 해제'}</button>`
       } else {
-        actionBtn = `<button type="button" class="btn-card-equip" onclick="window.mineroom.equipBackground('${item.id}')">장착하기</button>`
+        actionBtn = `<button type="button" class="btn-card-equip" ${isThemeBusy ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ''} onclick="window.mineroom.equipBackground('${item.id}')">${isThemeBusy ? '처리 중...' : '장착하기'}</button>`
       }
     } else {
       if (isExhausted) {
@@ -1790,9 +1818,11 @@ export function renderInventory() {
   attachInventoryCardDrag()
 }
 
-// 배경 아이템 장착 함수
-export function equipBackground(itemId) {
-  if (!state.isDbConnected) {
+// 배경 아이템 장착 함수 (equip_space_theme RPC 호출)
+export async function equipBackground(itemId) {
+  if (state.isEquippingTheme) return
+
+  if (!state.isDbConnected || !state.currentRoomId || !state.currentSpaceId) {
     showRoomError('DB 연결 실패 상태에서는 배경을 장착할 수 없습니다.')
     return
   }
@@ -1802,30 +1832,102 @@ export function equipBackground(itemId) {
   const cat = item.category
   if (!['wallpaper', 'flooring', 'window'].includes(cat)) return
 
-  state.roomTheme[cat] = itemId
-  localStorage.setItem(STORAGE_KEY_THEME, JSON.stringify(state.roomTheme))
-
-  renderIsoScene()
+  // 1. 처리 중 플래그 활성화 및 연타 방지
+  state.isEquippingTheme = true
   renderInventory()
-  const catName = cat === 'wallpaper' ? '벽지' : cat === 'flooring' ? '바닥재' : '창문'
-  showToast(`[${item.name}] ${catName}을(를) 방에 장착했습니다! ✨`, 'success')
+
+  try {
+    // 2. equip_space_theme RPC 호출
+    const { data, error } = await supabase.rpc('equip_space_theme', {
+      p_space_id: state.currentSpaceId,
+      p_slot: cat,
+      p_furniture_id: itemId
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (data && data.success) {
+      // 3. RPC 성공 시에만 화면 상태 갱신
+      state.roomTheme[cat] = itemId
+
+      // 4. state.spaces의 해당 방 행도 동기화 (방 전환 후 복귀 시 유지)
+      const currentSpace = (state.spaces || []).find(s => s.id === state.currentSpaceId)
+      if (currentSpace) {
+        if (cat === 'wallpaper') currentSpace.wallpaper_id = itemId
+        else if (cat === 'flooring') currentSpace.flooring_id = itemId
+        else if (cat === 'window') currentSpace.window_id = itemId
+      }
+
+      // 5. 씬 재렌더링
+      renderIsoScene()
+
+      const catName = cat === 'wallpaper' ? '벽지' : cat === 'flooring' ? '바닥재' : '창문'
+      showToast(`[${item.name}] ${catName}을(를) 방에 장착했습니다! ✨`, 'success')
+    }
+  } catch (err) {
+    console.error('배경 장착 실패:', err)
+    const msg = formatThemeError(err)
+    showToast(msg, 'error')
+  } finally {
+    state.isEquippingTheme = false
+    renderInventory()
+  }
 }
 
-// 배경 아이템 장착 해제 함수 (기본 스타일로 복귀)
-export function unequipBackground(category) {
-  if (!state.isDbConnected) {
+// 배경 아이템 장착 해제 함수 (기본 스타일로 복귀, equip_space_theme RPC p_furniture_id=null 호출)
+export async function unequipBackground(category) {
+  if (state.isEquippingTheme) return
+
+  if (!state.isDbConnected || !state.currentRoomId || !state.currentSpaceId) {
     showRoomError('DB 연결 실패 상태에서는 배경을 장착 해제할 수 없습니다.')
     return
   }
   if (!['wallpaper', 'flooring', 'window'].includes(category)) return
 
-  state.roomTheme[category] = null
-  localStorage.setItem(STORAGE_KEY_THEME, JSON.stringify(state.roomTheme))
-
-  renderIsoScene()
+  // 1. 처리 중 플래그 활성화 및 연타 방지
+  state.isEquippingTheme = true
   renderInventory()
-  const catName = category === 'wallpaper' ? '벽지' : category === 'flooring' ? '바닥재' : '창문'
-  showToast(`[${catName}] 장착을 해제하고 기본 스타일로 복귀했습니다.`, 'normal')
+
+  try {
+    // 2. equip_space_theme RPC 호출 (p_furniture_id = null 해제)
+    const { data, error } = await supabase.rpc('equip_space_theme', {
+      p_space_id: state.currentSpaceId,
+      p_slot: category,
+      p_furniture_id: null
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (data && data.success) {
+      // 3. RPC 성공 시에만 화면 상태 갱신
+      state.roomTheme[category] = null
+
+      // 4. state.spaces의 해당 방 행 동기화
+      const currentSpace = (state.spaces || []).find(s => s.id === state.currentSpaceId)
+      if (currentSpace) {
+        if (category === 'wallpaper') currentSpace.wallpaper_id = null
+        else if (category === 'flooring') currentSpace.flooring_id = null
+        else if (category === 'window') currentSpace.window_id = null
+      }
+
+      // 5. 씬 재렌더링
+      renderIsoScene()
+
+      const catName = category === 'wallpaper' ? '벽지' : category === 'flooring' ? '바닥재' : '창문'
+      showToast(`[${catName}] 장착을 해제하고 기본 스타일로 복귀했습니다.`, 'normal')
+    }
+  } catch (err) {
+    console.error('배경 해제 실패:', err)
+    const msg = formatThemeError(err)
+    showToast(msg, 'error')
+  } finally {
+    state.isEquippingTheme = false
+    renderInventory()
+  }
 }
 
 function attachInventoryCardDrag() {
@@ -2283,18 +2385,14 @@ export async function buyItem(itemId, event) {
       state.roomPoints = data.remaining_points
     }
 
-    // 3. 배경 아이템인 경우 방에 즉시 자동 장착
+    // 3. 구매 성공 후 DB에서 인벤토리를 다시 불러와 화면 갱신
+    await loadRoomInventory()
+
+    // 4. 배경 아이템인 경우 현재 방에 자동 장착 RPC 호출
     const isBg = ['wallpaper', 'flooring', 'window'].includes(item.category)
     if (isBg) {
-      state.roomTheme[item.category] = itemId
-      try {
-        localStorage.setItem(STORAGE_KEY_THEME, JSON.stringify(state.roomTheme))
-      } catch (e) {}
-      renderIsoScene()
+      await equipBackground(itemId)
     }
-
-    // 4. 구매 성공 후 DB에서 인벤토리를 다시 불러와 화면 갱신
-    await loadRoomInventory()
 
     renderHeaderStats()
     renderShopTab()
@@ -2302,7 +2400,7 @@ export async function buyItem(itemId, event) {
 
     if (isBg) {
       const catName = item.category === 'wallpaper' ? '벽지' : item.category === 'flooring' ? '바닥재' : '창문'
-      showToast(`[${item.name}] ${catName}을(를) 구매하여 보관함에 담고 즉시 장착했습니다! ✨`, 'success')
+      showToast(`[${item.name}] ${catName}을(를) 구매하여 방에 장착했습니다! ✨`, 'success')
     } else {
       const newQty = state.inventory[itemId] || 1
       showToast(`[${item.name}]을(를) 구매했습니다! (총 보유: ${newQty}개) 🛍️`, 'success')
@@ -2753,6 +2851,7 @@ window.mineroom = {
   loadRoomPlacements,
   formatPurchaseError,
   formatPlacementError,
+  formatThemeError,
   generatePlacedItemId,
   placeAtCoordinates,
   SPACE_TYPES,
