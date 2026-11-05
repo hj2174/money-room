@@ -159,55 +159,55 @@ export function renderFurnitureResource(item, options = {}) {
 }
 
 // ==========================================================================
-// 1-2. 방 평형대 확장 티어 시스템 (자산 & 목표 달성 연동 원룸 -> 1.5룸 -> 펜트하우스)
+// 1-2. 방 격자 기하학 설정 (현재 방의 grid_cols/grid_rows 기반 동적 계산)
 // ==========================================================================
-export const ROOM_TIERS = {
-  studio: {
-    id: 'studio',
-    name: '스튜디오 원룸',
-    badge: '8x8 아늑한 원룸',
-    cols: 8,
-    rows: 8,
-    tileW: 44,
-    tileH: 22,
-    originY: 88,
-    slabH: 16,
-    wallH: 70,
-    minAsset: 0,
-    minGoals: 0,
-    desc: '아늑하고 컴팩트한 기본 원룸 공간'
-  },
-  one_room_plus: {
-    id: 'one_room_plus',
-    name: '미드센추리 1.5룸',
-    badge: '10x10 와이드 1.5룸',
-    cols: 10,
-    rows: 10,
-    tileW: 36.5,
-    tileH: 18.25,
-    originY: 82,
-    slabH: 16,
-    wallH: 66,
-    minAsset: 10000000,
-    minGoals: 2,
-    desc: '침실과 거실이 여유롭게 분리되는 1.5룸 확장형 공간'
-  },
-  penthouse: {
-    id: 'penthouse',
-    name: '프리미엄 펜트하우스',
-    badge: '12x12 럭셔리 펜트하우스',
-    cols: 12,
-    rows: 12,
-    tileW: 31.5,
-    tileH: 15.75,
-    originY: 78,
-    slabH: 16,
-    wallH: 62,
-    minAsset: 30000000,
-    minGoals: 4,
-    desc: '최고급 뷰와 넓은 공간을 자랑하는 와이드 펜트하우스'
+// 에셋 원본 타일 폭 기준 상수 (px)
+export const ASSET_TILE_W = 64
+
+export function getCurrentRoomConfig() {
+  const currentSpace = (state.spaces || []).find(s => s.id === state.currentSpaceId)
+  const cols = currentSpace?.grid_cols || 8
+  const rows = currentSpace?.grid_rows || 8
+
+  // 정사각형이 아닌 방은 지금은 "미지원"으로 처리
+  if (cols !== rows) {
+    showRoomError(`현재 방 규격(${cols}x${rows})은 미지원입니다. (정사각형 8x8 또는 10x10만 지원)`)
+    return {
+      cols: 8, rows: 8, tileW: 44, tileH: 22, originY: 88, slabH: 16, wallH: 70
+    }
+  }
+
+  // 8x8 규격 지원
+  if (cols === 8) {
+    return {
+      cols: 8, rows: 8, tileW: 44, tileH: 22, originY: 88, slabH: 16, wallH: 70
+    }
+  }
+
+  // 10x10 규격 지원
+  if (cols === 10) {
+    return {
+      cols: 10, rows: 10, tileW: 36.5, tileH: 18.25, originY: 82, slabH: 16, wallH: 66
+    }
+  }
+
+  // 그 외 크기 미지원
+  showRoomError(`현재 방 크기(${cols}x${rows})는 미지원입니다. (8x8 또는 10x10만 지원)`)
+  return {
+    cols: 8, rows: 8, tileW: 44, tileH: 22, originY: 88, slabH: 16, wallH: 70
   }
 }
+
+// 하위 호환
+export const getGridConfig = getCurrentRoomConfig
+
+// 2.5D 아이소메트릭 그리드 기하학 파라미터 (Proxy로 현재 방 규격 동적 연동)
+export const ISO_GRID = new Proxy({}, {
+  get(target, prop) {
+    const config = getCurrentRoomConfig()
+    return config[prop]
+  }
+})
 
 // ==========================================================================
 // 2. 미니룸 상태 관리 (State)
@@ -215,24 +215,6 @@ export const ROOM_TIERS = {
 const STORAGE_KEY_PLACED = 'moneyroom_mineroom_placed'
 const STORAGE_KEY_INVENTORY = 'moneyroom_mineroom_inventory'
 const STORAGE_KEY_POINTS = 'moneyroom_mineroom_points'
-const STORAGE_KEY_THEME = 'moneyroom_mineroom_theme'
-const STORAGE_KEY_TIER = 'moneyroom_mineroom_tier'
-
-// 에셋 원본 타일 폭 기준 상수 (px)
-export const ASSET_TILE_W = 64
-
-export function getGridConfig() {
-  const tierKey = state.currentTier || 'studio'
-  return ROOM_TIERS[tierKey] || ROOM_TIERS.studio
-}
-
-// 2.5D 아이소메트릭 그리드 기하학 파라미터 (Proxy로 현재 티어 동적 연동)
-export const ISO_GRID = new Proxy({}, {
-  get(target, prop) {
-    const config = getGridConfig()
-    return config[prop]
-  }
-})
 
 let state = {
   isEditing: false, // 편집 모드 여부
@@ -240,7 +222,8 @@ let state = {
   roomPoints: 1000, // 보유 룸포인트
   achievedGoalsCount: 0, // 달성된 목표 개수
   goals: [], // 전체 목표 목록
-  placedItems: [], // 방에 배치된 가구 [{ id, furniture_id, x, y, rotation, flipH }]
+  placedItems: [], // 현재 활성 방에 배치된 가구 [{ id, space_id, furniture_id, x, y, rotation, flipH }]
+  housePlacedCounts: {}, // 집 전체(모든 방 통합) 가구별 배치 수량 맵 { [furniture_id]: count }
   inventory: {
     sofa_cozy: 1,
     table_tea: 1,
@@ -249,21 +232,22 @@ let state = {
     bed_pastel: 1
   }, // 기본 보유 아이템 수량 목록 { [furniture_id]: quantity }
   selectedItemInstanceId: null, // 현재 방에서 선택된 가구의 id
-  activeShopFilter: 'bed', // 상점 카테고리 필터 ('bed' | 'desk-chair' | 'sofa-rug' | 'decor-plant' | 'background' | 'special')
-  activeShopBgSubFilter: 'all', // 상점 배경 서브필터 ('all' | 'wallpaper' | 'flooring' | 'window')
-  activeInventoryFilter: 'all', // 보관함 필터 ('all' | 'furniture' | 'background')
-  activePanelTab: 'inventory', // 하단 패널 탭 ('inventory' | 'shop')
+  activeShopFilter: 'bed', // 상점 카테고리 필터
+  activeShopBgSubFilter: 'all', // 상점 배경 서브필터
+  activeInventoryFilter: 'all', // 보관함 필터
+  activePanelTab: 'inventory', // 하단 패널 탭
   isDbSynced: false, // Supabase DB 동기화 성공 여부
-  isDbConnected: false, // Supabase DB 세션 및 RPC 연결 정상 여부 (실패 시 구매/배치 비활성화)
-  isPurchasing: false, // 상점 가구 구매 RPC 처리 중 여부 (연타 중복 구매 방지)
+  isDbConnected: false, // Supabase DB 세션 및 RPC 연결 정상 여부
+  isPurchasing: false, // 상점 가구 구매 RPC 처리 중 여부
 
-  // 🏡 내 방 DB 연동 상태 (rooms 테이블)
-  currentRoomId: null, // 방 고유 식별자 (UUID)
-  roomName: '내 방', // 방 이름
-  localPoints: 0, // localStorage 기존 포인트 보관 (마이그레이션용)
+  // 🏡 집(House / rooms) 및 방(Space / room_spaces) DB 연동 상태
+  currentRoomId: null, // 집 고유 식별자 (UUID)
+  currentSpaceId: null, // 현재 활성화된 방 고유 식별자 (UUID)
+  spaces: [], // 현재 집의 방 메타데이터 목록 (room_spaces 레코드 배열)
+  roomName: '내 방', // 집 이름
+  localPoints: 0,
 
-  // 🏠 방 확장 티어 & 커스텀 배경 테마 상태 (장착된 카탈로그 아이템 ID 또는 null)
-  currentTier: 'studio', // 'studio' | 'one_room_plus' | 'penthouse'
+  // 🖼️ 현재 활성 방의 배경 테마 (wallpaper_id, flooring_id, window_id)
   roomTheme: {
     wallpaper: null,
     flooring: null,
@@ -310,6 +294,12 @@ export function formatPlacementError(err) {
   const msg = err?.message || err?.details || String(err || '')
   if (msg.includes('INSUFFICIENT_INVENTORY')) {
     return '보관함의 잔여 수량이 부족하여 가구를 배치할 수 없습니다.'
+  }
+  if (msg.includes('MISSING_SPACE_ID')) {
+    return '가구를 배치할 방이 지정되지 않았습니다.'
+  }
+  if (msg.includes('INVALID_SPACE')) {
+    return '지정된 방이 현재 집에 속해 있지 않습니다.'
   }
   if (msg.includes('CANNOT_CHANGE_ROOM_ID')) {
     return '다른 방으로 가구를 이동할 수 없습니다.'
@@ -393,24 +383,54 @@ export async function loadPersonalRoom() {
 
     state.currentRoomId = data.room_id
     state.roomName = data.name || '내 방'
+    state.currentSpaceId = data.default_space_id || null
 
-    // 4. DB(rooms 테이블)에서 최신 방 상태 및 포인트 직접 조회
+    // 4. DB(rooms 테이블)에서 최신 포인트 및 집 정보 조회
     const { data: roomRow, error: roomError } = await supabase
       .from('rooms')
-      .select('id, name, points, tier, wallpaper_id, flooring_id, window_id')
+      .select('id, name, points')
       .eq('id', data.room_id)
       .single()
 
     if (!roomError && roomRow) {
       state.roomPoints = Number(roomRow.points) || 0
-      if (roomRow.tier) state.currentTier = roomRow.tier
       if (roomRow.name) state.roomName = roomRow.name
-      if (roomRow.wallpaper_id) state.roomTheme.wallpaper = roomRow.wallpaper_id
-      if (roomRow.flooring_id) state.roomTheme.flooring = roomRow.flooring_id
-      if (roomRow.window_id) state.roomTheme.window = roomRow.window_id
     } else {
       state.roomPoints = Number(data.points) || 0
     }
+
+    // 5. room_spaces를 SELECT해서 state.spaces에 저장
+    const { data: spacesData, error: spacesError } = await supabase
+      .from('room_spaces')
+      .select('*')
+      .eq('room_id', state.currentRoomId)
+      .order('sort_order', { ascending: true })
+
+    if (spacesError || !spacesData || spacesData.length === 0) {
+      throw new Error('방 정보를 불러오지 못했습니다.')
+    }
+
+    state.spaces = spacesData
+
+    // default_space_id가 비어있다면 첫 번째 방 또는 is_default인 방으로 설정
+    if (!state.currentSpaceId) {
+      const defaultSpace = state.spaces.find(s => s.is_default) || state.spaces[0]
+      state.currentSpaceId = defaultSpace ? defaultSpace.id : null
+    }
+
+    if (!state.currentSpaceId) {
+      throw new Error('방 정보를 불러오지 못했습니다.')
+    }
+
+    // 현재 활성화된 방의 테마(벽지/바닥/창문)를 state.spaces의 현재 방 행에서 읽음
+    const currentSpace = state.spaces.find(s => s.id === state.currentSpaceId)
+    if (!currentSpace) {
+      throw new Error('방 정보를 불러오지 못했습니다.')
+    }
+
+    state.roomTheme.wallpaper = currentSpace.wallpaper_id || null
+    state.roomTheme.flooring = currentSpace.flooring_id || null
+    state.roomTheme.window = currentSpace.window_id || null
 
     state.isDbConnected = true
     state.isDbSynced = true
@@ -419,11 +439,13 @@ export async function loadPersonalRoom() {
     renderShopTab()
     return true
   } catch (err) {
-    console.error('내 방 로드/생성 중 오류 발생:', err)
+    console.error('내 방/공간 로드 중 오류 발생:', err)
     state.isDbConnected = false
     state.isDbSynced = false
     const msg = err.message || err.details || (typeof err === 'string' ? err : '서버와 통신할 수 없습니다.')
-    showRoomError(`DB 연결 실패: ${msg}`)
+    const isSpaceError = msg.includes('방 정보를 불러오지 못했습니다')
+    const displayMsg = isSpaceError ? '방 정보를 불러오지 못했습니다' : `DB 연결 실패: ${msg}`
+    showRoomError(displayMsg)
     updateDbDisabledState()
     return false
   }
@@ -459,20 +481,6 @@ export function updateDbDisabledState() {
   toolbarBtns.forEach(btn => {
     btn.disabled = !isOk
   })
-
-  // 3. 공간 평형대 확장 배지
-  const tierBadge = document.getElementById('stat-room-tier')
-  if (tierBadge) {
-    if (!isOk) {
-      tierBadge.style.pointerEvents = 'none'
-      tierBadge.style.opacity = '0.6'
-      tierBadge.title = 'DB 연결 실패로 평형대를 변경할 수 없습니다.'
-    } else {
-      tierBadge.style.pointerEvents = 'auto'
-      tierBadge.style.opacity = '1'
-      tierBadge.title = '평형대 확장'
-    }
-  }
 }
 
 // --------------------------------------------------------------------------
@@ -516,6 +524,7 @@ export async function loadRoomPlacements() {
   if (!state.currentRoomId) return state.placedItems
 
   try {
+    // 1. 집 전체(room_id 기준, space_id 무관) 배치 데이터 조회
     const { data, error } = await supabase
       .from('room_placed_items')
       .select('*')
@@ -526,8 +535,24 @@ export async function loadRoomPlacements() {
     }
 
     if (Array.isArray(data)) {
-      state.placedItems = data.map(row => ({
+      // 2. 집 전체 가구별 배치 수량 집계 (보관함 남은 수량 계산용)
+      const counts = {}
+      data.forEach(row => {
+        const fid = row.furniture_id
+        if (fid) {
+          counts[fid] = (counts[fid] || 0) + 1
+        }
+      })
+      state.housePlacedCounts = counts
+
+      // 3. 화면에 그리는 가구는 현재 방(space_id) 것만 분리 필터링
+      const currentRoomData = state.currentSpaceId
+        ? data.filter(row => String(row.space_id) === String(state.currentSpaceId))
+        : data
+
+      state.placedItems = currentRoomData.map(row => ({
         id: String(row.id),
+        space_id: row.space_id,
         furniture_id: row.furniture_id,
         x: Number(row.x) || 0,
         y: Number(row.y) || 0,
@@ -643,17 +668,6 @@ export async function initMineroomData() {
 
   // 4. room_placed_items 배치 데이터 DB 로드
   await loadRoomPlacements()
-
-  // 테마 & 방 평형대 티어 로컬 데이터 복원
-  try {
-    const savedTheme = localStorage.getItem(STORAGE_KEY_THEME)
-    if (savedTheme) state.roomTheme = JSON.parse(savedTheme)
-
-    const savedTier = localStorage.getItem(STORAGE_KEY_TIER)
-    if (savedTier && ROOM_TIERS[savedTier]) state.currentTier = savedTier
-  } catch (e) {
-    console.warn('테마/티어 복원 실패:', e)
-  }
 
   updateDbSyncBadge()
   renderIsoScene()
@@ -1435,6 +1449,7 @@ async function applyDropItem(instanceId, col, row) {
       })
       .eq('id', instanceId)
       .eq('room_id', state.currentRoomId)
+      .eq('space_id', state.currentSpaceId)
 
     if (error) {
       throw error
@@ -1554,6 +1569,7 @@ export async function flipSelectedItem() {
       })
       .eq('id', item.id)
       .eq('room_id', state.currentRoomId)
+      .eq('space_id', state.currentSpaceId)
 
     if (error) {
       throw error
@@ -1588,20 +1604,22 @@ export async function removeSelectedItemToInventory() {
   const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
   const prevSelectedId = state.selectedItemInstanceId
 
-  // 화면 선반영 및 백업
+  // 화면 선반영 및 집 전체 카운트 차감
   state.placedItems.splice(itemIndex, 1)
   state.selectedItemInstanceId = null
+  state.housePlacedCounts[item.furniture_id] = Math.max(0, (state.housePlacedCounts[item.furniture_id] || 1) - 1)
 
   renderPlacedItems()
   renderInventory()
 
   try {
-    // 단건 DELETE: room_placed_items
+    // 단건 DELETE: room_placed_items (space_id 포함)
     const { error } = await supabase
       .from('room_placed_items')
       .delete()
       .eq('id', item.id)
       .eq('room_id', state.currentRoomId)
+      .eq('space_id', state.currentSpaceId)
 
     if (error) {
       throw error
@@ -1614,8 +1632,9 @@ export async function removeSelectedItemToInventory() {
     showToast(`[${meta ? meta.name : '가구'}]을(를) 보관함에 넣었습니다 📦`)
   } catch (err) {
     console.error('가구 보관(DELETE) 실패:', err)
-    // 롤백: 제거했던 가구 다시 복원
+    // 롤백: 제거했던 가구 및 집 전체 카운트 복원
     state.placedItems.splice(itemIndex, 0, item)
+    state.housePlacedCounts[item.furniture_id] = (state.housePlacedCounts[item.furniture_id] || 0) + 1
     state.selectedItemInstanceId = prevSelectedId
     renderPlacedItems()
     renderInventory()
@@ -1701,7 +1720,7 @@ export function renderInventory() {
     const isEquipped = isBg && state.roomTheme[item.category] === item.id
 
     const totalQty = state.inventory[itemId] || (isEquipped ? 1 : 0)
-    const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
+    const placedCount = state.housePlacedCounts[itemId] || 0
     const remainingQty = isBg ? (isEquipped ? 0 : 1) : Math.max(0, totalQty - placedCount)
     const isExhausted = !isBg && remainingQty === 0
 
@@ -1812,9 +1831,9 @@ function attachInventoryCardDrag() {
       if (!state.isDbConnected) return
       if (e.target.closest('button')) return
 
-      // 실시간 잔여 수량 재검증
+      // 실시간 잔여 수량 재검증 (집 전체 배치 수량 기준)
       const totalQty = state.inventory[itemId] || 0
-      const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
+      const placedCount = state.housePlacedCounts[itemId] || 0
       if (totalQty - placedCount <= 0) return
 
       isDown = true
@@ -1879,16 +1898,17 @@ function attachInventoryCardDrag() {
 }
 
 async function placeAtCoordinates(itemId, col, row) {
-  if (!state.isDbConnected || !state.currentRoomId) {
+  if (!state.isDbConnected || !state.currentRoomId || !state.currentSpaceId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 배치할 수 없습니다.')
     return
   }
   const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!meta) return
 
+  // 집 전체 배치 수량 기준 잔여량 검증
   const totalQty = state.inventory[itemId] || 0
-  const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
-  if (totalQty - placedCount <= 0) {
+  const totalPlacedCount = state.housePlacedCounts[itemId] || 0
+  if (totalQty - totalPlacedCount <= 0) {
     showToast(`[${meta.name}]의 남은 수량이 없습니다! (모두 배치됨)`, 'error')
     return
   }
@@ -1900,6 +1920,7 @@ async function placeAtCoordinates(itemId, col, row) {
   const newInstanceId = generatePlacedItemId()
   const newItem = {
     id: newInstanceId,
+    space_id: state.currentSpaceId,
     furniture_id: itemId,
     x: clampedX,
     y: clampedY,
@@ -1907,8 +1928,10 @@ async function placeAtCoordinates(itemId, col, row) {
     flipH: false
   }
 
-  // 화면 선반영
+  // 화면 선반영 및 집 전체 카운트 갱신
   state.placedItems.push(newItem)
+  state.housePlacedCounts[itemId] = totalPlacedCount + 1
+
   if (!state.isEditing) {
     toggleEditMode(true)
   }
@@ -1919,12 +1942,13 @@ async function placeAtCoordinates(itemId, col, row) {
   renderShopTab()
 
   try {
-    // 단건 INSERT: room_placed_items
+    // 단건 INSERT: room_placed_items (space_id 포함)
     const { error } = await supabase
       .from('room_placed_items')
       .insert({
         id: newItem.id,
         room_id: state.currentRoomId,
+        space_id: state.currentSpaceId,
         furniture_id: newItem.furniture_id,
         x: newItem.x,
         y: newItem.y,
@@ -1944,8 +1968,9 @@ async function placeAtCoordinates(itemId, col, row) {
     showToast(`[${meta.name}]이(가) (${clampedX + 1}, ${clampedY + 1})에 배치되었습니다! ✨`)
   } catch (err) {
     console.error('가구 꺼내기(INSERT) 실패:', err)
-    // 롤백: 방금 추가한 가구 제거 및 화면 복원
+    // 롤백: 방금 추가한 가구 제거 및 집 전체 카운트 복원
     state.placedItems = state.placedItems.filter(p => p.id !== newInstanceId)
+    state.housePlacedCounts[itemId] = Math.max(0, (state.housePlacedCounts[itemId] || 1) - 1)
     if (state.selectedItemInstanceId === newInstanceId) {
       state.selectedItemInstanceId = null
     }
@@ -1959,15 +1984,16 @@ async function placeAtCoordinates(itemId, col, row) {
 }
 
 export async function placeFromInventory(itemId) {
-  if (!state.isDbConnected || !state.currentRoomId) {
+  if (!state.isDbConnected || !state.currentRoomId || !state.currentSpaceId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 배치할 수 없습니다.')
     return
   }
   const meta = FURNITURE_CATALOG.find(f => f.id === itemId)
   if (!meta) return
 
+  // 집 전체 배치 수량 기준 잔여량 검증
   const totalQty = state.inventory[itemId] || 0
-  const placedCount = state.placedItems.filter(p => p.furniture_id === itemId).length
+  const placedCount = state.housePlacedCounts[itemId] || 0
   if (totalQty - placedCount <= 0) {
     showToast(`[${meta.name}]의 남은 수량이 없습니다! (모두 배치됨)`, 'error')
     return
@@ -2331,7 +2357,7 @@ export async function saveMineroomLayout() {
 }
 
 export async function clearAllPlacedItems() {
-  if (!state.isDbConnected || !state.currentRoomId) {
+  if (!state.isDbConnected || !state.currentRoomId || !state.currentSpaceId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
     return
   }
@@ -2339,22 +2365,27 @@ export async function clearAllPlacedItems() {
     showToast('방에 배치된 가구가 없습니다.')
     return
   }
-  if (!confirm('배치된 모든 가구를 보관함으로 옮기시겠습니까?')) return
+  if (!confirm('현재 방에 배치된 모든 가구를 보관함으로 옮기시겠습니까?')) return
 
   // 이전 배치 백업 (실패 시 롤백용)
   const prevPlaced = [...state.placedItems]
 
+  // 화면 선반영 및 집 전체 카운트 차감
+  prevPlaced.forEach(item => {
+    state.housePlacedCounts[item.furniture_id] = Math.max(0, (state.housePlacedCounts[item.furniture_id] || 1) - 1)
+  })
   state.placedItems = []
   state.selectedItemInstanceId = null
   renderPlacedItems()
   renderInventory()
 
   try {
-    // DB에서 현재 방의 모든 배치 삭제
+    // DB에서 현재 방(space_id)의 모든 배치 삭제
     const { error } = await supabase
       .from('room_placed_items')
       .delete()
       .eq('room_id', state.currentRoomId)
+      .eq('space_id', state.currentSpaceId)
 
     if (error) {
       throw error
@@ -2364,10 +2395,13 @@ export async function clearAllPlacedItems() {
       localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
     } catch (e) {}
 
-    showToast('모든 가구를 보관함으로 회수했습니다 🧹')
+    showToast('현재 방의 모든 가구를 보관함으로 회수했습니다 🧹')
   } catch (err) {
-    console.error('전체 비우기(DELETE) 실패:', err)
-    // 롤백: 이전 배치 상태 복원
+    console.error('현재 방 비우기(DELETE) 실패:', err)
+    // 롤백: 이전 배치 상태 복원 및 집 전체 카운트 복원
+    prevPlaced.forEach(item => {
+      state.housePlacedCounts[item.furniture_id] = (state.housePlacedCounts[item.furniture_id] || 0) + 1
+    })
     state.placedItems = prevPlaced
     renderPlacedItems()
     renderInventory()
@@ -2383,75 +2417,9 @@ export async function clearAllPlacedItems() {
 function renderHeaderStats() {
   const ptEl = document.getElementById('stat-room-points')
   const assetEl = document.getElementById('stat-total-asset')
-  const tierEl = document.getElementById('stat-room-tier')
 
   if (ptEl) ptEl.innerText = `${state.roomPoints.toLocaleString()}P`
   if (assetEl) assetEl.innerText = `${state.totalAsset.toLocaleString()}원`
-  if (tierEl) {
-    const curTier = getGridConfig()
-    tierEl.innerText = `🏠 ${curTier.name} ▾`
-  }
-}
-
-// 🏠 공간 평형대 확장 티어 모달
-export function openTierModal() {
-  if (!state.isDbConnected) {
-    showRoomError('DB 연결 실패 상태에서는 평형대를 확장할 수 없습니다.')
-    return
-  }
-  const modal = document.getElementById('tier-modal')
-  renderTierModal()
-  if (modal) modal.classList.add('open')
-}
-
-export function closeTierModal() {
-  const modal = document.getElementById('tier-modal')
-  if (modal) modal.classList.remove('open')
-}
-
-export function renderTierModal() {
-  const container = document.getElementById('tier-list-container')
-  if (!container) return
-
-  const tiers = Object.values(ROOM_TIERS)
-  container.innerHTML = tiers.map(tier => {
-    const isCurrent = state.currentTier === tier.id
-    const assetEligible = state.totalAsset >= tier.minAsset
-    const goalsEligible = state.achievedGoalsCount >= tier.minGoals
-    const isUnlocked = assetEligible || goalsEligible || tier.minAsset === 0
-
-    let condText = ''
-    if (tier.minAsset === 0) {
-      condText = '기본 제공 평형대'
-    } else {
-      condText = `해금 조건: 총자산 ${tier.minAsset.toLocaleString()}원 이상 또는 목표 ${tier.minGoals}개 달성 (현재: ${state.totalAsset.toLocaleString()}원 / ${state.achievedGoalsCount}개)`
-    }
-
-    let actionBtn = ''
-    if (isCurrent) {
-      actionBtn = `<button type="button" class="btn-tier-action is-current" disabled>✓ 현재 평형</button>`
-    } else if (isUnlocked) {
-      actionBtn = `<button type="button" class="btn-tier-action" onclick="window.mineroom.setRoomTier('${tier.id}')">이 평형대로 변경</button>`
-    } else {
-      actionBtn = `<button type="button" class="btn-tier-action" style="opacity: 0.5;" disabled>🔒 해금 필요</button>`
-    }
-
-    return `
-      <div class="tier-card ${isCurrent ? 'is-active' : ''}">
-        <div class="tier-card-info">
-          <div class="tier-card-header">
-            <span class="tier-card-title">${tier.name}</span>
-            <span class="tier-badge-pill">${tier.badge}</span>
-          </div>
-          <div class="tier-card-desc">${tier.desc}</div>
-          <div class="tier-card-condition ${isUnlocked ? 'unlocked' : ''}">
-            ${isUnlocked ? '🔓 해금 완료' : '🔒 ' + condText}
-          </div>
-        </div>
-        ${actionBtn}
-      </div>
-    `
-  }).join('')
 }
 
 export function handleHeaderModeClick() {
@@ -2525,35 +2493,6 @@ export function setPanelTab(tabName) {
   }
 }
 
-// 🏠 방 확장 티어 변경 함수
-export function setRoomTier(tierId) {
-  if (!state.isDbConnected) {
-    showRoomError('DB 연결 실패 상태에서는 평형대를 확장할 수 없습니다.')
-    return
-  }
-  if (!ROOM_TIERS[tierId]) return
-  state.currentTier = tierId
-  localStorage.setItem(STORAGE_KEY_TIER, tierId)
-
-  // 가구들이 새로운 그리드 경계를 벗어나지 않도록 클램프
-  const config = ROOM_TIERS[tierId]
-  state.placedItems.forEach(item => {
-    const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
-    if (meta) {
-      const { spanW, spanH } = getItemSpan(item, meta)
-      item.x = Math.max(0, Math.min(item.x, config.cols - spanW))
-      item.y = Math.max(0, Math.min(item.y, config.rows - spanH))
-    }
-  })
-  localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-
-  renderIsoScene()
-  renderPlacedItems()
-  renderHeaderStats()
-  renderTierModal()
-  showToast(`방 평형대가 [${config.name}](${config.badge})으로 확장되었습니다! 🏠✨`, 'success')
-}
-
 // 토스트 메시지
 let toastTimer = null
 export function showToast(message, type = 'normal') {
@@ -2624,10 +2563,6 @@ window.mineroom = {
   renderInventory,
   equipBackground,
   unequipBackground,
-  setRoomTier,
-  openTierModal,
-  closeTierModal,
-  renderTierModal,
   openSqlModal,
   closeSqlModal,
   copySqlCode,
