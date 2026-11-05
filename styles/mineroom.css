@@ -143,6 +143,89 @@
     color: #b8860b;
 }
 
+/* --------------------------------------------------------------------------
+   다중 방 전환 칩 탭 바 (Room Switcher Bar)
+   -------------------------------------------------------------------------- */
+.space-tabs-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+    padding: 2px 0 4px;
+    margin-top: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #d8d0c5 transparent;
+}
+
+.space-tabs-bar::-webkit-scrollbar {
+    height: 4px;
+}
+
+.space-tabs-bar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.space-tabs-bar::-webkit-scrollbar-thumb {
+    background: #d8d0c5;
+    border-radius: 4px;
+}
+
+.space-tab-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    background: #f7f4ee;
+    border: 1px solid #e2dbcf;
+    color: #5c4d43;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+    user-select: none;
+    line-height: 1.2;
+}
+
+.space-tab-chip:hover:not(:disabled) {
+    background: #ebe4d8;
+    border-color: #cbbfaf;
+}
+
+.space-tab-chip.active {
+    background: #2d6a4f;
+    color: #ffffff;
+    border-color: #245c38;
+    box-shadow: 0 2px 8px rgba(45, 106, 79, 0.25);
+}
+
+.space-tab-chip.is-locked {
+    background: #f0ece5;
+    border-color: #ded7cb;
+    color: #8c7e72;
+}
+
+.space-tab-chip.is-locked:hover:not(:disabled) {
+    background: #e7e2d9;
+    border-color: #cbbfaf;
+}
+
+.space-tab-chip .chip-lock-desc {
+    font-size: 10px;
+    opacity: 0.8;
+    font-weight: 500;
+    margin-left: 1px;
+}
+
+.space-tab-chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .db-sync-badge {
     font-size: 11px;
     font-weight: 700;
@@ -1801,6 +1884,21 @@
 
     .stat-item-value {
         font-size: 13px;
+    }
+
+    .space-tabs-bar {
+        gap: 5px;
+        padding-bottom: 2px;
+    }
+
+    .space-tab-chip {
+        padding: 5px 9px;
+        font-size: 11px;
+        gap: 4px;
+    }
+
+    .space-tab-chip .chip-lock-desc {
+        font-size: 9px;
     }
 
     .panel-tab-btn {

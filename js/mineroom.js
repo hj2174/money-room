@@ -159,6 +159,18 @@ export function renderFurnitureResource(item, options = {}) {
 }
 
 // ==========================================================================
+// 1-1. 다중 방 공간 종류 메타데이터 (BALCONY는 비정사각형 미검증으로 제외)
+// ==========================================================================
+export const SPACE_TYPES = [
+  { type: 'MAIN', name: '메인룸', icon: '🏠' },
+  { type: 'LIVING', name: '거실', icon: '🛋️' },
+  { type: 'BED', name: '침실', icon: '🛏️' },
+  { type: 'STUDY', name: '서재', icon: '📚' },
+  { type: 'KITCHEN', name: '주방', icon: '🍳' },
+  { type: 'DRESS', name: '드레스룸', icon: '👗' }
+]
+
+// ==========================================================================
 // 1-2. 방 격자 기하학 설정 (현재 방의 grid_cols/grid_rows 기반 동적 계산)
 // ==========================================================================
 // 에셋 원본 타일 폭 기준 상수 (px)
@@ -239,6 +251,7 @@ let state = {
   isDbSynced: false, // Supabase DB 동기화 성공 여부
   isDbConnected: false, // Supabase DB 세션 및 RPC 연결 정상 여부
   isPurchasing: false, // 상점 가구 구매 RPC 처리 중 여부
+  isSwitchingSpace: false, // 다중 방 전환/해금 RPC 처리 중 여부 (연타 방지)
 
   // 🏡 집(House / rooms) 및 방(Space / room_spaces) DB 연동 상태
   currentRoomId: null, // 집 고유 식별자 (UUID)
@@ -436,6 +449,7 @@ export async function loadPersonalRoom() {
     state.isDbSynced = true
     updateDbDisabledState()
     renderHeaderStats()
+    renderSpaceTabs()
     renderShopTab()
     return true
   } catch (err) {
@@ -481,6 +495,9 @@ export function updateDbDisabledState() {
   toolbarBtns.forEach(btn => {
     btn.disabled = !isOk
   })
+
+  // 3. 방 전환 칩 탭 버튼 상태 동기화
+  renderSpaceTabs()
 }
 
 // --------------------------------------------------------------------------
@@ -673,6 +690,7 @@ export async function initMineroomData() {
   renderIsoScene()
   renderPlacedItems()
   renderInventory()
+  renderSpaceTabs()
   renderShopTab()
 }
 
@@ -1939,6 +1957,7 @@ async function placeAtCoordinates(itemId, col, row) {
 
   renderPlacedItems()
   renderInventory()
+  renderSpaceTabs()
   renderShopTab()
 
   try {
@@ -2422,6 +2441,167 @@ function renderHeaderStats() {
   if (assetEl) assetEl.innerText = `${state.totalAsset.toLocaleString()}원`
 }
 
+// --------------------------------------------------------------------------
+// 10-1. 다중 방 전환 칩 탭 바 렌더링
+// --------------------------------------------------------------------------
+export function renderSpaceTabs() {
+  const container = document.getElementById('mineroom-space-tabs')
+  if (!container) return
+
+  const isLockedActionDisabled = state.isSwitchingSpace || !state.isDbConnected
+
+  container.innerHTML = SPACE_TYPES.map(def => {
+    const existingSpace = (state.spaces || []).find(s => s.space_type === def.type)
+
+    if (existingSpace) {
+      const isActive = existingSpace.id === state.currentSpaceId
+      const disabledAttr = state.isSwitchingSpace ? 'disabled' : ''
+      return `
+        <button type="button" 
+          class="space-tab-chip ${isActive ? 'active' : ''}" 
+          data-space-id="${existingSpace.id}"
+          ${disabledAttr}
+          onclick="window.mineroom.switchSpace('${existingSpace.id}')"
+          title="${existingSpace.name || def.name} (${existingSpace.grid_cols}x${existingSpace.grid_rows})">
+          <span>${def.icon}</span>
+          <span>${existingSpace.name || def.name}</span>
+        </button>
+      `
+    } else {
+      const disabledAttr = isLockedActionDisabled ? 'disabled' : ''
+      return `
+        <button type="button" 
+          class="space-tab-chip is-locked" 
+          data-space-type="${def.type}"
+          ${disabledAttr}
+          onclick="window.mineroom.handleLockedSpaceClick('${def.type}')"
+          title="해금 조건 준비 중">
+          <span>🔒</span>
+          <span>${def.name}</span>
+          <span class="chip-lock-desc">(해금 조건 준비 중)</span>
+        </button>
+      `
+    }
+  }).join('')
+}
+
+// --------------------------------------------------------------------------
+// 10-2. 잠금 방 클릭 시 해금 및 생성 RPC 호출 (unlock_and_create_space)
+// --------------------------------------------------------------------------
+export async function handleLockedSpaceClick(spaceType) {
+  if (state.isSwitchingSpace) return
+
+  if (!state.isDbConnected || !state.currentRoomId) {
+    showRoomError('DB 연결 실패 상태에서는 방을 해금할 수 없습니다.')
+    return
+  }
+
+  const def = SPACE_TYPES.find(d => d.type === spaceType)
+  const typeName = def ? def.name : spaceType
+
+  // 처리 중 버튼 비활성화 및 연타 방지
+  state.isSwitchingSpace = true
+  renderSpaceTabs()
+
+  try {
+    const { data, error } = await supabase.rpc('unlock_and_create_space', {
+      p_room_id: state.currentRoomId,
+      p_space_type: spaceType
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (data && data.success && data.space_id) {
+      // 1. 최신 방 목록 DB 재조회하여 state.spaces 갱신
+      const { data: spacesData, error: sErr } = await supabase
+        .from('room_spaces')
+        .select('*')
+        .eq('room_id', state.currentRoomId)
+        .order('sort_order', { ascending: true })
+
+      if (!sErr && spacesData) {
+        state.spaces = spacesData
+      }
+
+      showToast(`[${data.name || typeName}] 공간이 성공적으로 해금되었습니다! ✨`, 'success')
+
+      // 2. 해금된 신규 방으로 즉시 전환
+      await switchSpace(data.space_id)
+    }
+  } catch (err) {
+    console.warn('방 해금 요청 안내:', err)
+    const msg = err.message || err.details || String(err || '')
+
+    if (msg.includes('ROOM_LOCKED')) {
+      showToast(`[${typeName}]은(는) 아직 해금되지 않은 방입니다. (해금 조건 준비 중)`, 'normal')
+    } else if (msg.includes('ALREADY_EXISTS')) {
+      showToast(`이미 생성된 방입니다.`, 'normal')
+    } else if (msg.includes('INVALID_NAME')) {
+      showToast(`방 이름은 20자 이하여야 합니다.`, 'error')
+    } else {
+      showToast(`방 해금 실패: ${msg}`, 'error')
+    }
+  } finally {
+    state.isSwitchingSpace = false
+    renderSpaceTabs()
+  }
+}
+
+// --------------------------------------------------------------------------
+// 10-3. 활성화된 방 전환 함수 (다중 방 스위칭)
+// --------------------------------------------------------------------------
+export async function switchSpace(spaceId) {
+  if (!spaceId || state.isSwitchingSpace) return
+
+  // 이미 현재 방인 경우 불필요한 재전환 생략
+  if (spaceId === state.currentSpaceId) return
+
+  const targetSpace = (state.spaces || []).find(s => s.id === spaceId)
+  if (!targetSpace) {
+    showToast('존재하지 않는 방입니다.', 'error')
+    return
+  }
+
+  // 1. 방 전환 중 처리 플래그 설정 및 버튼 비활성화
+  state.isSwitchingSpace = true
+
+  // 2. 가구 드래그/선택 상태 초기화
+  selectItem(null)
+  clearHighlights()
+  renderFootprintPreview(null, null)
+  renderSpaceTabs()
+
+  try {
+    // 3. state.currentSpaceId 변경
+    state.currentSpaceId = spaceId
+
+    // 4. 방 테마(벽지/바닥/창문)를 해당 방 행에서 읽기
+    state.roomTheme.wallpaper = targetSpace.wallpaper_id || null
+    state.roomTheme.flooring = targetSpace.flooring_id || null
+    state.roomTheme.window = targetSpace.window_id || null
+
+    // 5. 해당 방의 grid_cols/grid_rows로 2.5D 아이소메트릭 씬 재렌더링
+    renderIsoScene()
+
+    // 6. 해당 방의 가구만 로드 및 표시
+    await loadRoomPlacements()
+    renderPlacedItems()
+
+    // 7. 보관함 수량 갱신 (보관함 남은 수량은 집 전체 housePlacedCounts 기준으로 유지)
+    renderInventory()
+
+    showToast(`[${targetSpace.name}] 공간으로 전환했습니다 🚪`)
+  } catch (err) {
+    console.error('방 전환 중 오류:', err)
+    showToast('방 전환 중 오류가 발생했습니다.', 'error')
+  } finally {
+    state.isSwitchingSpace = false
+    renderSpaceTabs()
+  }
+}
+
 export function handleHeaderModeClick() {
   if (!state.isDbConnected) {
     showRoomError('DB 연결 실패 상태에서는 방을 꾸밀 수 없습니다.')
@@ -2574,7 +2754,11 @@ window.mineroom = {
   formatPurchaseError,
   formatPlacementError,
   generatePlacedItemId,
-  placeAtCoordinates
+  placeAtCoordinates,
+  SPACE_TYPES,
+  renderSpaceTabs,
+  switchSpace,
+  handleLockedSpaceClick
 }
 
 if (typeof document !== 'undefined') {
