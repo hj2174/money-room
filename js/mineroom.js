@@ -304,6 +304,35 @@ export function formatPurchaseError(err) {
 }
 
 // --------------------------------------------------------------------------
+// 2-0-1. 가구 배치 오류 한국어 변환 헬퍼 (서버 트리거 및 DB 오류)
+// --------------------------------------------------------------------------
+export function formatPlacementError(err) {
+  const msg = err?.message || err?.details || String(err || '')
+  if (msg.includes('INSUFFICIENT_INVENTORY')) {
+    return '보관함의 잔여 수량이 부족하여 가구를 배치할 수 없습니다.'
+  }
+  if (msg.includes('CANNOT_CHANGE_ROOM_ID')) {
+    return '다른 방으로 가구를 이동할 수 없습니다.'
+  }
+  if (msg.includes('duplicate key') || msg.includes('unique constraint') || msg.includes('23505')) {
+    return '이미 존재하는 가구 식별자입니다. 다시 시도해주세요.'
+  }
+  return `가구 배치 동기화 실패: ${msg}`
+}
+
+// --------------------------------------------------------------------------
+// 2-0-2. 충돌 방지 가구 고유 식별자(ID) 생성기 (room_id 포함 UUID)
+// --------------------------------------------------------------------------
+export function generatePlacedItemId() {
+  const roomId = state.currentRoomId || 'room'
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${roomId}_${crypto.randomUUID()}`
+  }
+  const rand = Math.random().toString(36).substring(2, 9)
+  return `${roomId}_item_${Date.now()}_${rand}`
+}
+
+// --------------------------------------------------------------------------
 // 2-1. 미니룸 에러 표시 헬퍼
 // --------------------------------------------------------------------------
 export function showRoomError(message) {
@@ -487,21 +516,16 @@ export async function loadRoomPlacements() {
   if (!state.currentRoomId) return state.placedItems
 
   try {
-    let { data, error } = await supabase
+    const { data, error } = await supabase
       .from('room_placed_items')
       .select('*')
       .eq('room_id', state.currentRoomId)
 
-    // 신규 room_placed_items 테이블 조회 실패 시 mineroom_placed 호환 폴백
     if (error) {
-      const fallback = await supabase.from('mineroom_placed').select('*')
-      if (!fallback.error) {
-        data = fallback.data
-        error = null
-      }
+      throw error
     }
 
-    if (!error && Array.isArray(data)) {
+    if (Array.isArray(data)) {
       state.placedItems = data.map(row => ({
         id: String(row.id),
         furniture_id: row.furniture_id,
@@ -513,7 +537,10 @@ export async function loadRoomPlacements() {
       state.isDbSynced = true
     }
   } catch (err) {
-    console.warn('room_placed_items 로드 알림:', err.message)
+    console.error('room_placed_items 로드 실패:', err)
+    state.isDbSynced = false
+    const msg = formatPlacementError(err)
+    showRoomError(`배치 데이터 로드 실패: ${msg}`)
   }
   return state.placedItems
 }
@@ -1363,7 +1390,7 @@ function clearHighlights() {
   })
 }
 
-function applyDropItem(instanceId, col, row) {
+async function applyDropItem(instanceId, col, row) {
   const itemIndex = state.placedItems.findIndex(i => i.id === instanceId)
   if (itemIndex === -1) return
 
@@ -1376,11 +1403,57 @@ function applyDropItem(instanceId, col, row) {
   const clampedX = Math.max(0, Math.min(ISO_GRID.cols - spanW, col))
   const clampedY = Math.max(0, Math.min(ISO_GRID.rows - spanH, row))
 
+  // 위치 변화가 없는 경우 불필요한 DB UPDATE 생략
+  if (item.x === clampedX && item.y === clampedY) {
+    selectItem(instanceId)
+    return
+  }
+
+  // 이전 위치 백업 (실패 시 롤백용)
+  const prevX = item.x
+  const prevY = item.y
+
+  // 화면 선반영
   item.x = clampedX
   item.y = clampedY
-
   selectItem(instanceId)
-  showToast(`가구가 (${clampedX + 1}, ${clampedY + 1}) 위치로 배치되었습니다 ✨`)
+  renderPlacedItems()
+
+  if (!state.isDbConnected || !state.currentRoomId) {
+    showRoomError('DB 연결이 되어있지 않아 가구 이동 위치가 저장되지 않습니다.')
+    return
+  }
+
+  try {
+    // 단건 UPDATE: room_placed_items (x, y)
+    const { error } = await supabase
+      .from('room_placed_items')
+      .update({
+        x: clampedX,
+        y: clampedY,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', instanceId)
+      .eq('room_id', state.currentRoomId)
+
+    if (error) {
+      throw error
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
+    } catch (e) {}
+    showToast(`가구가 (${clampedX + 1}, ${clampedY + 1}) 위치로 이동되었습니다 ✨`)
+  } catch (err) {
+    console.error('가구 이동(UPDATE) 실패:', err)
+    // 롤백: 이전 위치로 복원
+    item.x = prevX
+    item.y = prevY
+    renderPlacedItems()
+    const msg = formatPlacementError(err)
+    showToast(msg, 'error')
+    showRoomError(msg)
+  }
 }
 
 export function selectItem(instanceId) {
@@ -1388,8 +1461,8 @@ export function selectItem(instanceId) {
   renderPlacedItems()
 }
 
-export function rotateSelectedItem() {
-  if (!state.isDbConnected) {
+export async function rotateSelectedItem() {
+  if (!state.isDbConnected || !state.currentRoomId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
     return
   }
@@ -1399,23 +1472,64 @@ export function rotateSelectedItem() {
   const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
   if (!meta) return
 
+  // 이전 상태 백업 (실패 시 롤백용)
+  const prevRot = item.rotation || 0
+  const prevX = item.x
+  const prevY = item.y
+
   // 90도 단위 회전 (0° -> 90° -> 180° -> 270° -> 0°)
-  item.rotation = ((item.rotation || 0) + 90) % 360
+  const newRot = ((item.rotation || 0) + 90) % 360
+  item.rotation = newRot
 
   // 회전된 점유 칸 기준으로 방 경계를 벗어나지 않도록 좌표 보정
   const { spanW, spanH } = getItemSpan(item, meta)
-  item.x = Math.max(0, Math.min(ISO_GRID.cols - spanW, item.x))
-  item.y = Math.max(0, Math.min(ISO_GRID.rows - spanH, item.y))
+  const newX = Math.max(0, Math.min(ISO_GRID.cols - spanW, item.x))
+  const newY = Math.max(0, Math.min(ISO_GRID.rows - spanH, item.y))
+  item.x = newX
+  item.y = newY
 
   renderPlacedItems()
-  const rotMsg = item.rotation === 0
-    ? '가구 회전을 원래 각도(0°)로 돌렸습니다 🔄'
-    : `가구를 90° 회전했습니다 (${item.rotation}°) 🔄`
-  showToast(rotMsg)
+
+  try {
+    // 단건 UPDATE: room_placed_items (rotation, x, y)
+    const { error } = await supabase
+      .from('room_placed_items')
+      .update({
+        rotation: newRot,
+        x: newX,
+        y: newY,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', item.id)
+      .eq('room_id', state.currentRoomId)
+
+    if (error) {
+      throw error
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
+    } catch (e) {}
+
+    const rotMsg = newRot === 0
+      ? '가구 회전을 원래 각도(0°)로 돌렸습니다 🔄'
+      : `가구를 90° 회전했습니다 (${newRot}°) 🔄`
+    showToast(rotMsg)
+  } catch (err) {
+    console.error('가구 회전(UPDATE) 실패:', err)
+    // 롤백: 이전 상태 복원
+    item.rotation = prevRot
+    item.x = prevX
+    item.y = prevY
+    renderPlacedItems()
+    const msg = formatPlacementError(err)
+    showToast(msg, 'error')
+    showRoomError(msg)
+  }
 }
 
-export function flipSelectedItem() {
-  if (!state.isDbConnected) {
+export async function flipSelectedItem() {
+  if (!state.isDbConnected || !state.currentRoomId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
     return
   }
@@ -1423,13 +1537,46 @@ export function flipSelectedItem() {
   const item = state.placedItems.find(i => i.id === state.selectedItemInstanceId)
   if (!item) return
 
-  item.flipH = !item.flipH
+  // 이전 상태 백업 (실패 시 롤백용)
+  const prevFlipH = Boolean(item.flipH)
+  const newFlipH = !prevFlipH
+
+  item.flipH = newFlipH
   renderPlacedItems()
-  showToast(item.flipH ? '가구를 좌우 반전했습니다 ↔️' : '가구 좌우 반전을 원래대로 돌렸습니다 ↔️')
+
+  try {
+    // 단건 UPDATE: room_placed_items (flip_h)
+    const { error } = await supabase
+      .from('room_placed_items')
+      .update({
+        flip_h: newFlipH,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', item.id)
+      .eq('room_id', state.currentRoomId)
+
+    if (error) {
+      throw error
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
+    } catch (e) {}
+
+    showToast(newFlipH ? '가구를 좌우 반전했습니다 ↔️' : '가구 좌우 반전을 원래대로 돌렸습니다 ↔️')
+  } catch (err) {
+    console.error('가구 반전(UPDATE) 실패:', err)
+    // 롤백: 이전 상태 복원
+    item.flipH = prevFlipH
+    renderPlacedItems()
+    const msg = formatPlacementError(err)
+    showToast(msg, 'error')
+    showRoomError(msg)
+  }
 }
 
-export function removeSelectedItemToInventory() {
-  if (!state.isDbConnected) {
+export async function removeSelectedItemToInventory() {
+  if (!state.isDbConnected || !state.currentRoomId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
     return
   }
@@ -1439,20 +1586,43 @@ export function removeSelectedItemToInventory() {
 
   const item = state.placedItems[itemIndex]
   const meta = FURNITURE_CATALOG.find(f => f.id === item.furniture_id)
+  const prevSelectedId = state.selectedItemInstanceId
 
+  // 화면 선반영 및 백업
   state.placedItems.splice(itemIndex, 1)
   state.selectedItemInstanceId = null
 
-  // 인벤토리에 수량 정보가 누락되어 있다면 최소 1개 보장
-  if (!(state.inventory[item.furniture_id] > 0)) {
-    state.inventory[item.furniture_id] = 1
-    localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
-  }
-  localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-
   renderPlacedItems()
   renderInventory()
-  showToast(`[${meta ? meta.name : '가구'}]을(를) 보관함에 넣었습니다 📦`)
+
+  try {
+    // 단건 DELETE: room_placed_items
+    const { error } = await supabase
+      .from('room_placed_items')
+      .delete()
+      .eq('id', item.id)
+      .eq('room_id', state.currentRoomId)
+
+    if (error) {
+      throw error
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
+    } catch (e) {}
+
+    showToast(`[${meta ? meta.name : '가구'}]을(를) 보관함에 넣었습니다 📦`)
+  } catch (err) {
+    console.error('가구 보관(DELETE) 실패:', err)
+    // 롤백: 제거했던 가구 다시 복원
+    state.placedItems.splice(itemIndex, 0, item)
+    state.selectedItemInstanceId = prevSelectedId
+    renderPlacedItems()
+    renderInventory()
+    const msg = formatPlacementError(err)
+    showToast(msg, 'error')
+    showRoomError(msg)
+  }
 }
 
 // ==========================================================================
@@ -1708,8 +1878,8 @@ function attachInventoryCardDrag() {
   })
 }
 
-function placeAtCoordinates(itemId, col, row) {
-  if (!state.isDbConnected) {
+async function placeAtCoordinates(itemId, col, row) {
+  if (!state.isDbConnected || !state.currentRoomId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 배치할 수 없습니다.')
     return
   }
@@ -1726,18 +1896,19 @@ function placeAtCoordinates(itemId, col, row) {
   const clampedX = Math.max(0, Math.min(ISO_GRID.cols - meta.baseW, col))
   const clampedY = Math.max(0, Math.min(ISO_GRID.rows - meta.baseH, row))
 
-  const newInstanceId = `item_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
-  state.placedItems.push({
+  // 충돌 방지 고유 ID 생성 (room_id 포함 UUID)
+  const newInstanceId = generatePlacedItemId()
+  const newItem = {
     id: newInstanceId,
     furniture_id: itemId,
     x: clampedX,
     y: clampedY,
     rotation: 0,
     flipH: false
-  })
+  }
 
-  localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-
+  // 화면 선반영
+  state.placedItems.push(newItem)
   if (!state.isEditing) {
     toggleEditMode(true)
   }
@@ -1746,11 +1917,49 @@ function placeAtCoordinates(itemId, col, row) {
   renderPlacedItems()
   renderInventory()
   renderShopTab()
-  showToast(`[${meta.name}]이(가) (${clampedX + 1}, ${clampedY + 1})에 배치되었습니다! ✨`)
+
+  try {
+    // 단건 INSERT: room_placed_items
+    const { error } = await supabase
+      .from('room_placed_items')
+      .insert({
+        id: newItem.id,
+        room_id: state.currentRoomId,
+        furniture_id: newItem.furniture_id,
+        x: newItem.x,
+        y: newItem.y,
+        rotation: newItem.rotation,
+        flip_h: newItem.flipH,
+        updated_at: new Date().toISOString()
+      })
+
+    if (error) {
+      throw error
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
+    } catch (e) {}
+
+    showToast(`[${meta.name}]이(가) (${clampedX + 1}, ${clampedY + 1})에 배치되었습니다! ✨`)
+  } catch (err) {
+    console.error('가구 꺼내기(INSERT) 실패:', err)
+    // 롤백: 방금 추가한 가구 제거 및 화면 복원
+    state.placedItems = state.placedItems.filter(p => p.id !== newInstanceId)
+    if (state.selectedItemInstanceId === newInstanceId) {
+      state.selectedItemInstanceId = null
+    }
+    renderPlacedItems()
+    renderInventory()
+    renderShopTab()
+    const msg = formatPlacementError(err)
+    showToast(msg, 'error')
+    showRoomError(msg)
+  }
 }
 
-export function placeFromInventory(itemId) {
-  if (!state.isDbConnected) {
+export async function placeFromInventory(itemId) {
+  if (!state.isDbConnected || !state.currentRoomId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 배치할 수 없습니다.')
     return
   }
@@ -1796,7 +2005,7 @@ export function placeFromInventory(itemId) {
     foundY = 0
   }
 
-  placeAtCoordinates(itemId, foundX, foundY)
+  await placeAtCoordinates(itemId, foundX, foundY)
 }
 
 // ==========================================================================
@@ -2092,76 +2301,26 @@ export function claimSpecialItem(itemId) {
 }
 
 // ==========================================================================
-// 9. Supabase 연동: 가구 배치 DB 완벽 저장 & 상태 복원
+// 9. Supabase 연동: 가구 배치 모드 완료 & 상태 관리 (단건 실시간 반영 방식)
 // ==========================================================================
 export async function saveMineroomLayout() {
-  try {
-    localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-  } catch (e) {
-    console.error('로컬 백업 실패:', e)
-  }
-
   const saveBtn = document.getElementById('btn-header-mode')
   if (saveBtn) {
     saveBtn.disabled = true
-    saveBtn.innerHTML = '<span>저장 중...</span>'
+    saveBtn.innerHTML = '<span>완료 중...</span>'
   }
 
   try {
-    if (state.currentRoomId) {
-      // 1. room_placed_items 테이블에서 현재 방의 기존 배치 삭제
-      await supabase.from('room_placed_items').delete().eq('room_id', state.currentRoomId)
-
-      if (state.placedItems.length > 0) {
-        const recordsToInsert = state.placedItems.map(item => ({
-          id: item.id,
-          room_id: state.currentRoomId,
-          furniture_id: item.furniture_id,
-          x: item.x,
-          y: item.y,
-          rotation: item.rotation || 0,
-          flip_h: Boolean(item.flipH),
-          updated_at: new Date().toISOString()
-        }))
-
-        const { error: insError } = await supabase.from('room_placed_items').insert(recordsToInsert)
-        if (insError) {
-          console.warn('room_placed_items 저장 알림, mineroom_placed 호환 시도:', insError.message)
-          await supabase.from('mineroom_placed').delete().neq('id', '__dummy_all__')
-          await supabase.from('mineroom_placed').insert(recordsToInsert.map(({ room_id, ...rest }) => rest))
-        }
-      }
-    } else {
-      const { error: delError } = await supabase
-        .from('mineroom_placed')
-        .delete()
-        .neq('id', '__dummy_all__')
-
-      if (delError && delError.code !== 'PGRST205') throw delError
-
-      if (state.placedItems.length > 0) {
-        const records = state.placedItems.map(item => ({
-          id: item.id,
-          furniture_id: item.furniture_id,
-          x: item.x,
-          y: item.y,
-          rotation: item.rotation || 0,
-          flip_h: Boolean(item.flipH),
-          updated_at: new Date().toISOString()
-        }))
-        await supabase.from('mineroom_placed').insert(records)
-      }
-    }
+    // 각 가구 조작 시점에 이미 DB에 단건으로 실시간 안전 저장되었으므로, 전체 삭제/일괄 재삽입은 절대 수행하지 않음
+    try {
+      localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
+    } catch (e) {}
 
     state.isDbSynced = true
     updateDbSyncBadge()
-    showToast('미니룸 배치가 Supabase DB에 완벽히 저장되었습니다! 💾✨', 'success')
+    showToast('미니룸 배치가 완료되었습니다! 💾✨', 'success')
   } catch (err) {
-    console.warn('Supabase 저장 안내:', err.message)
-    state.isDbSynced = false
-    updateDbSyncBadge()
-
-    showToast('배치가 안전하게 저장되었습니다!', 'success')
+    console.warn('배치 완료 처리 안내:', err)
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false
@@ -2171,8 +2330,8 @@ export async function saveMineroomLayout() {
   }
 }
 
-export function clearAllPlacedItems() {
-  if (!state.isDbConnected) {
+export async function clearAllPlacedItems() {
+  if (!state.isDbConnected || !state.currentRoomId) {
     showRoomError('DB 연결 실패 상태에서는 가구를 조작할 수 없습니다.')
     return
   }
@@ -2182,19 +2341,40 @@ export function clearAllPlacedItems() {
   }
   if (!confirm('배치된 모든 가구를 보관함으로 옮기시겠습니까?')) return
 
-  state.placedItems.forEach(item => {
-    if (!(state.inventory[item.furniture_id] > 0)) {
-      state.inventory[item.furniture_id] = 1
-    }
-  })
+  // 이전 배치 백업 (실패 시 롤백용)
+  const prevPlaced = [...state.placedItems]
+
   state.placedItems = []
   state.selectedItemInstanceId = null
-  localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(state.inventory))
-  localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
-
   renderPlacedItems()
   renderInventory()
-  showToast('모든 가구를 보관함으로 회수했습니다 🧹')
+
+  try {
+    // DB에서 현재 방의 모든 배치 삭제
+    const { error } = await supabase
+      .from('room_placed_items')
+      .delete()
+      .eq('room_id', state.currentRoomId)
+
+    if (error) {
+      throw error
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY_PLACED, JSON.stringify(state.placedItems))
+    } catch (e) {}
+
+    showToast('모든 가구를 보관함으로 회수했습니다 🧹')
+  } catch (err) {
+    console.error('전체 비우기(DELETE) 실패:', err)
+    // 롤백: 이전 배치 상태 복원
+    state.placedItems = prevPlaced
+    renderPlacedItems()
+    renderInventory()
+    const msg = formatPlacementError(err)
+    showToast(msg, 'error')
+    showRoomError(msg)
+  }
 }
 
 // ==========================================================================
@@ -2456,7 +2636,10 @@ window.mineroom = {
   updateDbDisabledState,
   loadRoomInventory,
   loadRoomPlacements,
-  formatPurchaseError
+  formatPurchaseError,
+  formatPlacementError,
+  generatePlacedItemId,
+  placeAtCoordinates
 }
 
 if (typeof document !== 'undefined') {
